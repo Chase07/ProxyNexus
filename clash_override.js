@@ -17,20 +17,23 @@
  *
  *【服务专用代理组】
  *
- * ChatGPT、Gemini、Claude、Grok：
- * 各自使用对应网站测速。
+ * ChatGPT/OpenAI、Claude：
+ * 各自使用对应网站测速和服务规则集。
  * 排除香港、纯联通、指定地区、高倍率节点。
- * 域名库使用上游规则集，保留核心域名静态兜底。
  * 测速只检查探测网址的 HTTP 状态和延迟，
  * 不验证登录态、API 可用性或账号地区资格。
  *
- * X：
- * 使用 X 自己的网页测速和 X/Twitter 域名规则。
- * 保留香港节点，不与 Grok 共用代理组。
+ * Google（含 Gemini）：
+ * 共用 Google_Auto，候选限定美国、日本、新加坡、台湾。
+ * Google 与 Gemini 的远程规则集都指向这个组。
  *
- * Muse：
- * 只用美国节点，单独测速 muse.ai。
- * 在 AI 候选的基础上再过滤出美国节点。
+ * X 与 Grok：
+ * 共用 SpaceX_Auto，使用 X 网站测速并合并两类域名规则。
+ *
+ * Meta 旗下产品与 Muse：
+ * Meta AI、Facebook、Instagram、Threads、WhatsApp、Messenger、Oculus/Quest
+ * 使用 MetaCubeX 对应远程域名集，并与 Muse 共用美国节点组 Meta_Auto。
+ * meta.ai 和 muse.ai 保留静态后缀规则。
  *
  * GitHub：
  * 单独测速。
@@ -88,7 +91,7 @@ function main(config) {
   // 第二层：筛选正则表达式
   // ==========================================================
   //
-  // 本层用于 AI / GitHub / X 服务专用组。
+  // 本层用于 AI / Google / X-Grok / Meta / GitHub 服务专用组。
   //
   // 普通自动选择组不经过这些筛选，
   // 因为它的目的是提供完整的节点自动选择功能。
@@ -139,7 +142,7 @@ function main(config) {
 
   // 2.5 美国节点识别
   //
-  // Muse 组只用美国。
+  // Meta AI、Muse 组只用美国；Google 组按指定的四个地区筛选。
   //
   // 只根据节点名称判断，不检测真实出口 IP。
   //
@@ -150,6 +153,9 @@ function main(config) {
   // USA01 / US01 → 命中
 
   const US = /美国|🇺🇸|United[\s_-]*States|\bUSA\d*\b|\bUS\d*\b/i;
+  const JAPAN = /日本|🇯🇵|Japan|\bJP\d*\b|\bJPN\b|东京|大阪|Tokyo|Osaka|Nagoya|Yokohama|Sapporo/i;
+  const SINGAPORE = /新加坡|🇸🇬|Singapore|\bSG\d*\b|\bSIN\d*\b/i;
+  const TAIWAN = /台湾|臺灣|🇹🇼|Taiwan|\bTW\d*\b|\bTWN\b|台北|高雄|Taipei|Kaohsiung/i;
 
   // ==========================================================
   // 第三层：读取节点倍率
@@ -250,26 +256,21 @@ function main(config) {
   //
   // 在通用服务候选基础上进一步排除香港。
   //
-  // 四个 AI 组使用同一份候选列表，
+  // ChatGPT、Claude 和 X/Grok 使用同一份基础候选列表，
   // 但测速网址彼此不同。
 
   const aiNames = generalServiceNames.filter((name) => !HK.test(name));
 
-  // 4.4 Muse 候选节点。
+  // 4.4 Meta AI / Muse 候选节点。
   //
-  // 在 AI 候选基础上进一步只保留美国节点。
-  //
-  // 继承 AI 的全部筛选：
-  // 排除机场信息、纯联通、指定地区、
-  // 超过 3 倍、香港。
-  //
-  // 例如：
-  // 美国 A01 移动优化 [1.0] → 保留
-  // 日本 A01 移动优化 → 排除
-  // 新加坡 A01 移动优化 → 排除
-  // 美国 A02 联通优化 → 排除（纯联通）
+  // 只保留美国节点；Google 组在下方单独筛选四个地区。
 
-  const museNames = aiNames.filter((name) => US.test(name));
+  const usNames = aiNames.filter((name) => US.test(name));
+
+  const googleNames = aiNames.filter(
+    (name) =>
+      US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name)
+  );
 
   // ==========================================================
   // 第五层：创建服务自动测速组
@@ -343,13 +344,21 @@ function main(config) {
     },
 
     {
-      name: "Gemini_Auto",
-      url: "https://gemini.google.com/",
-      candidates: aiNames,
+      name: "Google_Auto",
+      url: "https://www.google.com/",
+      candidates: googleNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: ["DOMAIN-SUFFIX,gemini.google.com", "DOMAIN-SUFFIX,generativelanguage.googleapis.com"],
-      ruleSets: [{ name: "proxynexus_gemini", file: "google-gemini.mrs" }]
+      rules: [
+        "DOMAIN-SUFFIX,gemini.google.com",
+        "DOMAIN-SUFFIX,generativelanguage.googleapis.com",
+        "DOMAIN-SUFFIX,google.com",
+        "DOMAIN-SUFFIX,google.com.hk"
+      ],
+      ruleSets: [
+        { name: "proxynexus_gemini", file: "google-gemini.mrs" },
+        { name: "proxynexus_google", file: "google.mrs" }
+      ]
     },
 
     {
@@ -363,41 +372,43 @@ function main(config) {
     },
 
     {
-      name: "Grok_Auto",
-      url: "https://grok.com/",
+      name: "SpaceX_Auto",
+      url: "https://x.com/",
       candidates: aiNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: ["DOMAIN-SUFFIX,grok.com", "DOMAIN-SUFFIX,x.ai", "DOMAIN-SUFFIX,grok.x.com"],
-      ruleSets: [{ name: "proxynexus_xai", file: "xai.mrs" }]
-    },
-
-    // 放在 X_Auto 前面：grok.x.com 也属于 x.com 的子域。
-    {
-      name: "X_Auto",
-      url: "https://x.com/",
-      candidates: generalServiceNames,
-      expectedStatus: SERVICE_STATUS,
-      interval: SERVICE_TEST_INTERVAL,
       rules: [
+        "DOMAIN-SUFFIX,grok.com",
+        "DOMAIN-SUFFIX,x.ai",
+        "DOMAIN-SUFFIX,grok.x.com",
         "DOMAIN-SUFFIX,x.com",
         "DOMAIN-SUFFIX,twitter.com",
         "DOMAIN-SUFFIX,twimg.com",
         "DOMAIN-SUFFIX,t.co"
       ],
       ruleSets: [
+        { name: "proxynexus_xai", file: "xai.mrs" },
         { name: "proxynexus_x", file: "x.mrs" },
         { name: "proxynexus_twitter", file: "twitter.mrs" }
       ]
     },
 
     {
-      name: "Muse_Auto",
-      url: "https://muse.ai/",
-      candidates: museNames,
+      name: "Meta_Auto",
+      url: "https://meta.ai/",
+      candidates: usNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: ["DOMAIN-SUFFIX,muse.ai"]
+      rules: ["DOMAIN-SUFFIX,meta.ai", "DOMAIN-SUFFIX,muse.ai"],
+      ruleSets: [
+        { name: "proxynexus_meta_facebook", file: "facebook.mrs" },
+        { name: "proxynexus_meta_instagram", file: "instagram.mrs" },
+        { name: "proxynexus_meta_threads", file: "threads.mrs" },
+        { name: "proxynexus_meta_whatsapp", file: "whatsapp.mrs" },
+        { name: "proxynexus_meta_messenger", file: "messenger.mrs" },
+        { name: "proxynexus_meta", file: "meta.mrs" },
+        { name: "proxynexus_meta_oculus", file: "oculus.mrs" }
+      ]
     },
 
     {
@@ -442,7 +453,13 @@ function main(config) {
 
   const oldGroups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
 
-  const dedicatedNames = new Set(dedicatedGroups.map((group) => group.name));
+  // 清理已合并组的旧名称，避免反复覆写时残留重复组。
+  const retiredGroupNames = ["Gemini_Auto", "Grok_Auto", "X_Auto", "Muse_Auto", "X_Grok_Auto"];
+
+  const dedicatedNames = new Set([
+    ...dedicatedGroups.map((group) => group.name),
+    ...retiredGroupNames
+  ]);
 
   const keptGroups = oldGroups.filter((group) => group && !dedicatedNames.has(group.name));
 
@@ -532,13 +549,12 @@ function main(config) {
   // 专用规则放在机场原有规则前面，
   // 优先命中我们自己创建的自动组。
   //
-  // X 与 Grok 使用各自的测速组，避免把整个 x.com
-  // 错误地并入 Grok_Auto。
+  // Google 与 Gemini、X 与 Grok 共用各自的策略组，
+  // 远程规则集和静态兜底规则都指向同一组。
   //
   // 主要服务的扩展域名由 MetaCubeX MRS 规则集维护，
   // 并经“手动选择”组下载；每天检查更新。
   // 少量核心域名保留静态兜底，规则集暂时不可用时仍可路由。
-  // x.ai 与 grok.x.com 由 Grok_Auto 接管，X 使用独立规则集。
   // 最终仍应检查客户端生成的有效配置和连接记录。
 
   const existingRuleProviders = config["rule-providers"];
@@ -600,7 +616,7 @@ function main(config) {
   // 优先级：
   //
   // ① 嘉信直连规则
-  // ② ChatGPT / Gemini / Claude / Grok / X / Muse / GitHub
+  // ② ChatGPT / Google（含 Gemini） / Claude / X（含 Grok） / Meta（含 Muse） / GitHub
   // ③ 机场原有规则
   //
   // Mihomo 从上到下依次匹配规则。
