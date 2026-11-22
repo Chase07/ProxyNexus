@@ -344,9 +344,9 @@ function main(config) {
   const serviceDefinitions = [
     {
       name: "APNs_Auto",
-      url: "https://api.push.apple.com/",
+      url: "https://captive.apple.com/hotspot-detect.html",
       candidates: apnsNames,
-      expectedStatus: "405",
+      expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
       rules: [
         "DOMAIN-SUFFIX,push.apple.com",
