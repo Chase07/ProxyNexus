@@ -153,6 +153,7 @@ function main(config) {
   // USA01 / US01 → 命中
 
   const US = /美国|🇺🇸|United[\s_-]*States|\bUSA\d*\b|\bUS\d*\b/i;
+  const IPV6_NODE = /IPv6|(?:^|[^A-Za-z0-9])V6(?:$|[^A-Za-z0-9])/i;
   const JAPAN = /日本|🇯🇵|Japan|\bJP\d*\b|\bJPN\b|东京|大阪|Tokyo|Osaka|Nagoya|Yokohama|Sapporo/i;
   const SINGAPORE = /新加坡|🇸🇬|Singapore|\bSG\d*\b|\bSIN\d*\b/i;
   const TAIWAN = /台湾|臺灣|🇹🇼|Taiwan|\bTW\d*\b|\bTWN\b|台北|高雄|Taipei|Kaohsiung/i;
@@ -267,9 +268,12 @@ function main(config) {
 
   const usNames = aiNames.filter((name) => US.test(name));
 
+  // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
+  // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
   const googleNames = aiNames.filter(
     (name) =>
-      US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name)
+      !IPV6_NODE.test(name) &&
+      (US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
   );
 
   // ==========================================================

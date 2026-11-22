@@ -19,13 +19,13 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 | 服务组 | 测速网址 | 候选节点 | 静态兜底域名 | 远程规则集 |
 | --- | --- | --- | --- | --- |
 | `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选 | `openai.com`、`chatgpt.com` | `openai.mrs` |
-| `Google_Auto` | `https://www.google.com/` | 名称标记为美国、日本、新加坡、台湾的 AI 候选 | `gemini.google.com`、`generativelanguage.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
+| `Google_Auto` | `https://www.google.com/` | 名称标记为美国、日本、新加坡、台湾且未标记 IPv6/V6 的 AI 候选 | `gemini.google.com`、`generativelanguage.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
 | `Claude_Auto` | `https://claude.ai/` | AI 候选 | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
 | `SpaceX_Auto` | `https://x.com/` | AI 候选 | `grok.com`、`x.ai`、`grok.x.com`、`x.com`、`twitter.com`、`twimg.com`、`t.co` | `xai.mrs`、`x.mrs`、`twitter.mrs` |
 | `Meta_Auto` | `https://meta.ai/` | AI 候选中名称标记为美国的节点 | `meta.ai`、`muse.ai` | `facebook.mrs`、`instagram.mrs`、`threads.mrs`、`whatsapp.mrs`、`messenger.mrs`、`meta.mrs`、`oculus.mrs` |
 | `GitHub_Auto` | `https://github.com/` | 通用服务候选，允许香港 | `github.com`、`githubusercontent.com` | `github.mrs` |
 
-ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。Google 候选只保留名称标记为美国、日本、新加坡、台湾的节点。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
+Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。Google 候选只保留名称标记为美国、日本、新加坡、台湾的节点。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
 
 Meta 产品远程集合包含 Facebook、Instagram、Threads、WhatsApp、Messenger、Meta 与 Oculus/Quest。集合内容由 MetaCubeX 的 geosite 库维护；它不是 Meta 官方域名清单，无法保证包含每个产品的所有新域名。已观测到的 `meta.ai` 与 `muse.ai` 使用静态 `DOMAIN-SUFFIX` 规则兜底；发现其他遗漏域名时，应先看连接日志，再补充到对应静态规则或上游规则集。
 
