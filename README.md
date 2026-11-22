@@ -9,7 +9,7 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 脚本按顺序完成以下工作：
 
 1. 从 `config.proxies` 读取当前配置中的静态节点，并按节点名称筛选候选集。
-2. 为 OpenAI/ChatGPT、Google/Gemini、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
+2. 为 APNs、OpenAI/ChatGPT、Google/Gemini、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
 3. 保留机场已有的 `♻️ 自动选择` 组；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
 4. 注册服务规则集，并把服务规则放在原配置规则之前。
 5. 将更新后的配置返回给客户端。
@@ -18,6 +18,7 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 
 | 服务组 | 测速网址 | 候选节点 | 静态兜底域名 | 远程规则集 |
 | --- | --- | --- | --- | --- |
+| `APNs_Auto` | `https://api.push.apple.com/`（预期 HTTP 405） | 名称标记为美国、日本、新加坡、香港的通用服务候选 | `push.apple.com` 和 Apple 公布的 APNs IPv4/IPv6 网段 | — |
 | `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选 | `openai.com`、`chatgpt.com` | `openai.mrs` |
 | `Google_Auto` | `https://www.google.com/` | 名称标记为美国、日本、新加坡、台湾且未标记 IPv6/V6 的 AI 候选 | `gemini.google.com`、`generativelanguage.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
 | `Claude_Auto` | `https://claude.ai/` | AI 候选 | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
@@ -26,6 +27,8 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 | `GitHub_Auto` | `https://github.com/` | 通用服务候选，允许香港 | `github.com`、`githubusercontent.com` | `github.mrs` |
 
 Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。Google 候选只保留名称标记为美国、日本、新加坡、台湾的节点。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
+
+APNs 使用独立的 `APNs_Auto`，从名称标记为美国、日本、新加坡、香港的通用服务候选中测速。测速目标 `api.push.apple.com` 对未认证请求返回 HTTP 405，脚本将 405 视为端点可达；这只测 HTTPS 443 的延迟，不验证设备侧 APNs 长连接。规则包含 `push.apple.com` 及 Apple 公布的 5 段 IPv4、4 段 IPv6 APNs 地址段，不包含范围更广的 `akadns.net` 和 `apple.com.edgekey.net`。APNs 是设备共享的推送连接，命中后所有使用 APNs 的应用通知都会走 `APNs_Auto`，无法按应用单独分流。要影响 iPhone 推送，必须在承载 iPhone 流量的 Clash 客户端加载此脚本；仅在 Mac 加载不会改变 iPhone 的 APNs 路径。
 
 Meta 产品远程集合包含 Facebook、Instagram、Threads、WhatsApp、Messenger、Meta 与 Oculus/Quest。集合内容由 MetaCubeX 的 geosite 库维护；它不是 Meta 官方域名清单，无法保证包含每个产品的所有新域名。已观测到的 `meta.ai` 与 `muse.ai` 使用静态 `DOMAIN-SUFFIX` 规则兜底；发现其他遗漏域名时，应先看连接日志，再补充到对应静态规则或上游规则集。
 
@@ -74,7 +77,7 @@ Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome
 - 脚本只从 `config.proxies` 读取静态节点，不展开 `proxy-providers`。
 - 地区、运营商和倍率都根据节点名称判断，不检查节点的真实出口 IP 或机场计费信息。
 - 没有倍率标记的节点暂按 `1.0` 倍处理。
-- 普通自动组只排除机场信息类节点；服务组还会排除纯联通、指定地区和超过 `3.0` 倍的节点。AI 候选额外排除香港；Meta AI（含 Muse 域名）只保留美国标记节点；Google 只保留美国、日本、新加坡、台湾标记节点；X/Grok 共用 AI 候选。
+- 普通自动组只排除机场信息类节点；服务组还会排除纯联通、指定地区和超过 `3.0` 倍的节点。AI 候选额外排除香港；Meta AI（含 Muse 域名）只保留美国标记节点；Google 只保留美国、日本、新加坡、台湾标记节点；APNs 使用美国、日本、新加坡、香港标记节点；X/Grok 共用 AI 候选。
 - 若某服务筛选后没有候选节点，该服务组会使用 `REJECT`，不会自动放宽筛选条件。
 
 ## 修改脚本时

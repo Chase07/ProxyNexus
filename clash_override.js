@@ -262,6 +262,11 @@ function main(config) {
 
   const aiNames = generalServiceNames.filter((name) => !HK.test(name));
 
+  // APNs 自动组只用名称标记为美国、日本、新加坡、香港的节点。
+  const apnsNames = generalServiceNames.filter(
+    (name) => US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || HK.test(name)
+  );
+
   // 4.4 Meta AI / Muse 候选节点。
   //
   // 只保留美国节点；Google 组在下方单独筛选四个地区。
@@ -337,6 +342,26 @@ function main(config) {
   // 避免新增服务时只加了分组或分流规则中的一部分。
 
   const serviceDefinitions = [
+    {
+      name: "APNs_Auto",
+      url: "https://api.push.apple.com/",
+      candidates: apnsNames,
+      expectedStatus: "405",
+      interval: SERVICE_TEST_INTERVAL,
+      rules: [
+        "DOMAIN-SUFFIX,push.apple.com",
+        "IP-CIDR,17.249.0.0/16,no-resolve",
+        "IP-CIDR,17.252.0.0/16,no-resolve",
+        "IP-CIDR,17.57.144.0/22,no-resolve",
+        "IP-CIDR,17.188.128.0/18,no-resolve",
+        "IP-CIDR,17.188.20.0/23,no-resolve",
+        "IP-CIDR6,2620:149:a44::/48,no-resolve",
+        "IP-CIDR6,2403:300:a42::/48,no-resolve",
+        "IP-CIDR6,2403:300:a51::/48,no-resolve",
+        "IP-CIDR6,2a01:b740:a42::/48,no-resolve"
+      ]
+    },
+
     {
       name: "ChatGPT_Auto",
       url: "https://chatgpt.com/",
@@ -568,7 +593,10 @@ function main(config) {
 
   serviceDefinitions.forEach((service) => {
     service.rules.forEach((rule) => {
-      serviceRules.push(rule + "," + service.name);
+      const ruleParts = rule.split(",");
+      serviceRules.push(
+        [ruleParts[0], ruleParts[1], service.name, ...ruleParts.slice(2)].join(",")
+      );
     });
 
     (service.ruleSets || []).forEach((ruleSet) => {
