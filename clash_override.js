@@ -350,6 +350,9 @@ function main(config) {
       interval: SERVICE_TEST_INTERVAL,
       rules: [
         "DOMAIN-SUFFIX,push.apple.com",
+        "DOMAIN-SUFFIX,push.apple.com.cn",
+        "DOMAIN-SUFFIX,akadns.net",
+        "DOMAIN-KEYWORD,apple.com.edgekey.net",
         "IP-CIDR,17.249.0.0/16,no-resolve",
         "IP-CIDR,17.252.0.0/16,no-resolve",
         "IP-CIDR,17.57.144.0/22,no-resolve",
