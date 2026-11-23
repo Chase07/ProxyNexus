@@ -32,7 +32,7 @@
  *
  * Meta 旗下产品与 Muse：
  * Meta AI、Facebook、Instagram、Threads、WhatsApp、Messenger、Oculus/Quest
- * 使用 MetaCubeX 对应远程域名集，并与 Muse 共用美国节点组 Meta_Auto。
+ * 使用 MetaCubeX 对应远程域名集，并与 Muse 共用美国和新加坡节点组 Meta_Auto。
  * meta.ai 和 muse.ai 保留静态后缀规则。
  *
  * GitHub：
@@ -142,7 +142,7 @@ function main(config) {
 
   // 2.5 美国节点识别
   //
-  // Meta AI、Muse 组只用美国；Google 组按指定的四个地区筛选。
+  // Meta AI、Muse 组使用美国和新加坡；Google 组按指定的四个地区筛选。
   //
   // 只根据节点名称判断，不检测真实出口 IP。
   //
@@ -269,9 +269,9 @@ function main(config) {
 
   // 4.4 Meta AI / Muse 候选节点。
   //
-  // 只保留美国节点；Google 组在下方单独筛选四个地区。
+  // 只保留美国和新加坡节点；Google 组在下方单独筛选四个地区。
 
-  const usNames = aiNames.filter((name) => US.test(name));
+  const metaNames = aiNames.filter((name) => US.test(name) || SINGAPORE.test(name));
 
   // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
@@ -428,7 +428,7 @@ function main(config) {
     {
       name: "Meta_Auto",
       url: "https://meta.ai/",
-      candidates: usNames,
+      candidates: metaNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
       rules: ["DOMAIN-SUFFIX,meta.ai", "DOMAIN-SUFFIX,muse.ai"],
