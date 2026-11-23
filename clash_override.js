@@ -645,21 +645,65 @@ function main(config) {
   ];
 
   // ==========================================================
-  // 8.2 合并最终分流规则
+  // 8.2 Tailscale：强制直连（兼顾 TUN 模式）
+  // ==========================================================
+  //
+  // 避免开启代理客户端 TUN 模式时劫持 Tailscale 隧道流量、
+  // MagicDNS 或后台打洞包。
+
+  const tailscaleDirectRules = [
+    "IP-CIDR,100.64.0.0/10,DIRECT,no-resolve",
+    "IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve",
+    "DOMAIN-SUFFIX,ts.net,DIRECT",
+    "PROCESS-NAME,io.tailscale.ipn.macsys.network-extension,DIRECT",
+    "PROCESS-NAME,IPNExtension,DIRECT",
+    "PROCESS-NAME,Tailscale,DIRECT",
+    "PROCESS-NAME,tailscaled,DIRECT"
+  ];
+
+  const tailscaleExcludeCidrs = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"];
+
+  if (config.tun && typeof config.tun === "object" && !Array.isArray(config.tun)) {
+    const existingExcludes = Array.isArray(config.tun["route-exclude-address"])
+      ? config.tun["route-exclude-address"]
+      : [];
+
+    config.tun["route-exclude-address"] = [
+      ...new Set([...existingExcludes, ...tailscaleExcludeCidrs])
+    ];
+  }
+
+  if (
+    config.dns &&
+    typeof config.dns === "object" &&
+    !Array.isArray(config.dns) &&
+    (!config.dns["fake-ip-filter-mode"] || config.dns["fake-ip-filter-mode"] === "blacklist")
+  ) {
+    const existingFakeIpFilters = Array.isArray(config.dns["fake-ip-filter"])
+      ? config.dns["fake-ip-filter"]
+      : [];
+
+    config.dns["fake-ip-filter"] = [...new Set([...existingFakeIpFilters, "+.ts.net"])];
+  }
+
+  // ==========================================================
+  // 8.3 合并最终分流规则
   // ==========================================================
   //
   // 优先级：
   //
-  // ① 嘉信直连规则
-  // ② ChatGPT / Google（含 Gemini） / Claude / X（含 Grok） / Meta（含 Muse） / GitHub
+  // ① 嘉信与 Tailscale 直连规则
+  // ② APNs / ChatGPT / Google（含 Gemini） / Claude / X（含 Grok） / Meta（含 Muse） / GitHub
   // ③ 机场原有规则
   //
   // Mihomo 从上到下依次匹配规则。
-  // 嘉信域名优先 DIRECT。
+  // 嘉信域名与 Tailscale 流量优先 DIRECT。
 
   const originalRules = Array.isArray(config.rules) ? config.rules : [];
 
-  config.rules = [...new Set([...schwabDirectRules, ...serviceRules, ...originalRules])];
+  config.rules = [
+    ...new Set([...schwabDirectRules, ...tailscaleDirectRules, ...serviceRules, ...originalRules])
+  ];
 
   // ==========================================================
   // 第九层：返回最终配置

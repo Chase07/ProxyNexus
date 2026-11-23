@@ -66,9 +66,11 @@ https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/goog
 
 配置规则按以下顺序合并：
 
-1. 嘉信域名直连规则。
+1. 嘉信域名与 Tailscale 直连规则。
 2. 各服务的静态规则和远程 `RULE-SET` 引用，顺序与 `serviceDefinitions` 一致。
 3. 原配置中的规则。
+
+Tailscale 直连规则包含隧道网段 `100.64.0.0/10`、`fd7a:115c:a1e0::/48`、MagicDNS 域名 `ts.net` 以及 Tailscale 进程名（`io.tailscale.ipn.macsys.network-extension`、`IPNExtension`、`Tailscale`、`tailscaled`），放在服务规则和原配置规则之前；该设置会让 Tailscale 守护进程自身流量走 `DIRECT`（不影响浏览器访问网页登录）。当原配置已存在 `tun` 对象时，脚本会向 `tun.route-exclude-address` 合并追加 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48`（不改变 `tun.enable`）；当已存在 `dns` 对象且 `fake-ip-filter-mode` 未设置或为 `blacklist` 时，会向 `dns.fake-ip-filter` 合并追加 `+.ts.net`。部分 GUI 客户端会在覆写脚本之后以界面全局 TUN/DNS 设置覆盖 `tun` / `dns` 字段，启用 TUN 模式后需在客户端界面确认路由排除并在系统侧实测生效。
 
 Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome 搜索和 Gemini 等 Google 域名共用这个组。X、Twitter 与 Grok 的静态规则和三个远程规则集都指向 `SpaceX_Auto`，所以 `grok.x.com` 与 `x.com` 的规则匹配顺序不会把它们分到不同组。
 
