@@ -13,7 +13,7 @@
  * PAOLUZ：
  * 已经自带“♻️ 自动选择”组。
  * 直接保留机场原有的测速组及候选节点。
- * 不重复创建，也不覆盖它的设置。
+ * 不重复创建；仅将已知明文 http:// 测速地址（如 gstatic/cloudflare generate_204）升级为 https://。
  *
  *【服务专用代理组】
  *
@@ -506,7 +506,54 @@ function main(config) {
   const keptGroups = oldGroups.filter((group) => group && !dedicatedNames.has(group.name));
 
   // 6.2 复用第四层检查结果 existingAuto，避免重复扫描原策略组。
-  // AUTO_NAME 不在 dedicatedNames 中，因此 keptGroups 中会原样保留它。
+  // AUTO_NAME 不在 dedicatedNames 中，因此 keptGroups 中会保留它。
+  // 若原配置测速地址使用已知明文 HTTP generate_204，则自动升级为 HTTPS。
+
+  const PLAINTEXT_TEST_URL =
+    /^http:\/\/((?:www\.)?gstatic\.com\/generate_204|cp\.cloudflare\.com\/generate_204)(?:[?#].*)?$/i;
+
+  /**
+   * 将已知明文 HTTP generate_204 测速地址升级为 HTTPS，
+   * 避免 Mihomo 开启统一延迟（连续两次 HEAD 请求）时因明文测速异常报错弹窗。
+   */
+  function upgradePlaintextTestUrl(url) {
+    if (typeof url !== "string") {
+      return url;
+    }
+
+    const trimmed = url.trim();
+    if (PLAINTEXT_TEST_URL.test(trimmed)) {
+      return trimmed.replace(/^http:\/\//i, "https://");
+    }
+
+    return url;
+  }
+
+  keptGroups.forEach((group) => {
+    if (typeof group.url === "string") {
+      group.url = upgradePlaintextTestUrl(group.url);
+    }
+  });
+
+  if (
+    config["proxy-providers"] &&
+    typeof config["proxy-providers"] === "object" &&
+    !Array.isArray(config["proxy-providers"])
+  ) {
+    Object.values(config["proxy-providers"]).forEach((provider) => {
+      if (
+        provider &&
+        typeof provider === "object" &&
+        !Array.isArray(provider) &&
+        provider["health-check"] &&
+        typeof provider["health-check"] === "object" &&
+        !Array.isArray(provider["health-check"]) &&
+        typeof provider["health-check"].url === "string"
+      ) {
+        provider["health-check"].url = upgradePlaintextTestUrl(provider["health-check"].url);
+      }
+    });
+  }
 
   const addedGroups = [];
 
@@ -536,7 +583,7 @@ function main(config) {
   }
 
   // 如果已经存在“♻️ 自动选择”，
-  // 则不重新创建、不改变它的节点名单与测速参数。
+  // 则不重新创建，保留其原有节点名单与测速周期等参数（仅将已知明文 http:// 测速地址升级为 https://）。
 
   // ==========================================================
   // 第七层：合并所有代理组

@@ -10,7 +10,7 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 
 1. 从 `config.proxies` 读取当前配置中的静态节点，并按节点名称筛选候选集。
 2. 为 APNs、OpenAI/ChatGPT、Google/Gemini、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
-3. 保留机场已有的 `♻️ 自动选择` 组；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
+3. 保留机场已有的 `♻️ 自动选择` 组（并将原配置策略组与 `proxy-providers` 中已知明文 `http://` `generate_204` 测速地址自动升级为 `https://`）；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
 4. 注册服务规则集，并把服务规则放在原配置规则之前。
 5. 在原配置未启用 `sniffer` 时补齐默认域名嗅探配置，防止纯 IP 连接绕过域名规则。
 6. 将更新后的配置返回给客户端。
@@ -74,6 +74,8 @@ https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/goog
 Tailscale 直连规则包含隧道网段 `100.64.0.0/10`、`fd7a:115c:a1e0::/48`、MagicDNS 域名 `ts.net` 以及 Tailscale 进程名（`io.tailscale.ipn.macsys.network-extension`、`IPNExtension`、`Tailscale`、`tailscaled`），放在服务规则和原配置规则之前；该设置会让 Tailscale 守护进程自身流量走 `DIRECT`（不影响浏览器访问网页登录）。当原配置已存在 `tun` 对象时，脚本会向 `tun.route-exclude-address` 合并追加 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48`（不改变 `tun.enable`）；当已存在 `dns` 对象且 `fake-ip-filter-mode` 未设置或为 `blacklist` 时，会向 `dns.fake-ip-filter` 合并追加 `+.ts.net`。部分 GUI 客户端会在覆写脚本之后以界面全局 TUN/DNS 设置覆盖 `tun` / `dns` 字段，启用 TUN 模式后需在客户端界面确认路由排除并在系统侧实测生效。
 
 当原配置未提供 `sniffer` 或 `sniffer.enable` 不为 `true` 时，脚本会默认写入启用配置（开启 `force-dns-mapping`、`parse-pure-ip`、`override-destination`，嗅探 HTTP `80`/`8080-8880`、TLS `443`/`8443` 与 QUIC `443`/`8443`，并在 `skip-domain` 中保留 `Mijia Cloud` 与 `+.push.apple.com`）；若原配置已启用 `sniffer`，则保持原配置不变。部分客户端界面覆写可能会覆盖 `sniffer` 字段，生效情况需以客户端日志为准。
+
+当原配置保留的策略组 `url` 或 `proxy-providers` 的 `health-check.url` 使用明文 `http://www.gstatic.com/generate_204`、`http://gstatic.com/generate_204` 或 `http://cp.cloudflare.com/generate_204` 时，脚本会自动将其升级为对应的 `https://` 地址，以避免 Mihomo 开启统一延迟（同一连接连续两次 `HEAD` 请求）时因明文测速被劫持或连接提前关闭而报错弹窗；策略组其余参数与节点名单保持不变，非目标 HTTP 地址不做改写，脚本也仍不展开 `proxy-providers`。
 
 Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome 搜索和 Gemini 等 Google 域名共用这个组。X、Twitter 与 Grok 的静态规则和三个远程规则集都指向 `SpaceX_Auto`，所以 `grok.x.com` 与 `x.com` 的规则匹配顺序不会把它们分到不同组。
 
