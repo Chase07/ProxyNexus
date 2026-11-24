@@ -24,7 +24,8 @@
  * 不验证登录态、API 可用性或账号地区资格。
  *
  * Google（含 Gemini）：
- * 共用 Google_Auto，候选限定美国、日本、新加坡、台湾。
+ * 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国、日本，
+ * 否则（云）限定美国、日本、新加坡、台湾，并均排除名称标记为 IPv6/V6 的节点。
  * Google 与 Gemini 的远程规则集都指向这个组。
  *
  * X 与 Grok：
@@ -74,7 +75,8 @@ function main(config) {
   const NORMAL_TEST_INTERVAL = 900;
 
   // 自动测速切换容差，单位毫秒。
-  const TEST_TOLERANCE = 100;
+  // 适当放宽以减少网页浏览与 AI 使用时的频繁切节点。
+  const TEST_TOLERANCE = 200;
 
   // 单次测速超时，单位毫秒。
   const TEST_TIMEOUT = 5000;
@@ -142,7 +144,7 @@ function main(config) {
 
   // 2.5 美国节点识别
   //
-  // Meta AI、Muse 组使用美国和新加坡；Google 组按指定的四个地区筛选。
+  // Meta AI、Muse 组使用美国和新加坡；Google 组按是否自带“♻️ 自动选择”筛选美国/日本或美/日/新/台。
   //
   // 只根据节点名称判断，不检测真实出口 IP。
   //
@@ -267,18 +269,25 @@ function main(config) {
     (name) => US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || HK.test(name)
   );
 
-  // 4.4 Meta AI / Muse 候选节点。
+  // 4.4 识别原配置是否已自带普通自动选择组，并筛选 Meta AI / Muse 与 Google 候选节点。
   //
-  // 只保留美国和新加坡节点；Google 组在下方单独筛选四个地区。
+  // 仅依据原配置 proxy-groups 是否存在同名“♻️ 自动选择”组做区分，不读取外部订阅来源。
+  const AUTO_NAME = "♻️ 自动选择";
+  const oldGroups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
+  const existingAuto = oldGroups.find((group) => group && group.name === AUTO_NAME);
 
+  // Meta AI / Muse 只保留美国和新加坡节点。
   const metaNames = aiNames.filter((name) => US.test(name) || SINGAPORE.test(name));
 
   // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
+  // 原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国、日本，否则（云）保留美国、日本、新加坡、台湾。
   const googleNames = aiNames.filter(
     (name) =>
       !IPV6_NODE.test(name) &&
-      (US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
+      (existingAuto
+        ? US.test(name) || JAPAN.test(name)
+        : US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
   );
 
   // ==========================================================
@@ -483,8 +492,6 @@ function main(config) {
   // 删除与我们专用组同名的旧定义，
   // 避免重复创建。
 
-  const oldGroups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
-
   // 清理已合并组的旧名称，避免反复覆写时残留重复组。
   const retiredGroupNames = ["Gemini_Auto", "Grok_Auto", "X_Auto", "Muse_Auto", "X_Grok_Auto"];
 
@@ -495,11 +502,8 @@ function main(config) {
 
   const keptGroups = oldGroups.filter((group) => group && !dedicatedNames.has(group.name));
 
-  // 6.2 检查是否已有普通自动选择组。
-
-  const AUTO_NAME = "♻️ 自动选择";
-
-  const existingAuto = keptGroups.find((group) => group.name === AUTO_NAME);
+  // 6.2 复用第四层检查结果 existingAuto，避免重复扫描原策略组。
+  // AUTO_NAME 不在 dedicatedNames 中，因此 keptGroups 中会原样保留它。
 
   const addedGroups = [];
 
