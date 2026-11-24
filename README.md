@@ -21,13 +21,13 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 | --- | --- | --- | --- | --- |
 | `APNs_Auto` | `https://captive.apple.com/hotspot-detect.html`（预期 HTTP 200） | 名称标记为美国、日本、新加坡、香港的通用服务候选 | `push.apple.com`、`push.apple.com.cn` 及模块列出的其他域名和 IP 网段 | — |
 | `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选 | `openai.com`、`chatgpt.com` | `openai.mrs` |
-| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国、日本，否则保留美国、日本、新加坡、台湾 | `gemini.google.com`、`generativelanguage.googleapis.com`、`cloudcode-pa.googleapis.com`、`daily-cloudcode-pa.googleapis.com`、`aicode.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
+| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国，否则保留美国、日本、新加坡、台湾 | `gemini.google.com`、`generativelanguage.googleapis.com`、`cloudcode-pa.googleapis.com`、`daily-cloudcode-pa.googleapis.com`、`aicode.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
 | `Claude_Auto` | `https://claude.ai/` | AI 候选 | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
 | `SpaceX_Auto` | `https://x.com/` | AI 候选 | `grok.com`、`x.ai`、`grok.x.com`、`x.com`、`twitter.com`、`twimg.com`、`t.co` | `xai.mrs`、`x.mrs`、`twitter.mrs` |
 | `Meta_Auto` | `https://meta.ai/` | AI 候选中名称标记为美国或新加坡的节点 | `meta.ai`、`muse.ai` | `facebook.mrs`、`instagram.mrs`、`threads.mrs`、`whatsapp.mrs`、`messenger.mrs`、`meta.mrs`、`oculus.mrs` |
 | `GitHub_Auto` | `https://github.com/` | 通用服务候选，允许香港 | `github.com`、`githubusercontent.com` | `github.mrs` |
 
-Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。原配置自带 `♻️ 自动选择` 时，`Google_Auto` 只保留名称标记为美国、日本的候选节点；否则保留美国、日本、新加坡、台湾（此区分基于原配置策略组名称特征，并非检测订阅来源或真实出口归属地）。自动测速组的切换容差统一设为 `200ms`。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国和新加坡节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
+Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。原配置自带 `♻️ 自动选择` 时，`Google_Auto` 只保留名称标记为美国的候选节点；否则保留美国、日本、新加坡、台湾（此区分基于原配置策略组名称特征，并非检测订阅来源或真实出口归属地）。自动测速组的切换容差统一设为 `200ms`。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国和新加坡节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
 
 APNs 使用独立的 `APNs_Auto`，从名称标记为美国、日本、新加坡、香港的通用服务候选中测速。Mihomo URL-test 使用 HTTP `HEAD` 请求，因此测速目标采用支持 `HEAD` 的 Apple 连通性页面 `captive.apple.com/hotspot-detect.html`，预期状态为 HTTP 200。这只测 Apple 网站 HTTPS 443 的延迟，不验证设备侧 APNs 长连接。规则完整包含用户提供的 APNs 模块中的 3 条域名规则和 Apple 公布的 5 段 IPv4、4 段 IPv6 地址段，并额外覆盖日志中观测到的 `push.apple.com.cn`。其中 `akadns.net` 和 `apple.com.edgekey.net` 的匹配范围比 `push.apple.com` 更宽，可能让非推送的 Apple 相关流量也命中 `APNs_Auto`，需结合客户端活动记录验证。APNs 是设备共享的推送连接，命中后所有使用 APNs 的应用通知都会走 `APNs_Auto`，无法按应用单独分流。要影响 iPhone 推送，必须在承载 iPhone 流量的 Clash 客户端加载此脚本；仅在 Mac 加载不会改变 iPhone 的 APNs 路径。
 
@@ -82,7 +82,7 @@ Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome
 - 脚本只从 `config.proxies` 读取静态节点，不展开 `proxy-providers`。
 - 地区、运营商和倍率都根据节点名称判断，不检查节点的真实出口 IP 或机场计费信息。
 - 没有倍率标记的节点暂按 `1.0` 倍处理。
-- 普通自动组只排除机场信息类节点；服务组还会排除纯联通、指定地区和超过 `3.0` 倍的节点。AI 候选额外排除香港；Meta AI（含 Muse 域名）只保留美国和新加坡标记节点；Google 排除名称标记为 IPv6/V6 的节点，并在原配置自带 `♻️ 自动选择` 时只保留美国、日本标记节点，否则保留美国、日本、新加坡、台湾标记节点；APNs 使用美国、日本、新加坡、香港标记节点；X/Grok 共用 AI 候选。
+- 普通自动组只排除机场信息类节点；服务组还会排除纯联通、指定地区和超过 `3.0` 倍的节点。AI 候选额外排除香港；Meta AI（含 Muse 域名）只保留美国和新加坡标记节点；Google 排除名称标记为 IPv6/V6 的节点，并在原配置自带 `♻️ 自动选择` 时只保留美国标记节点，否则保留美国、日本、新加坡、台湾标记节点；APNs 使用美国、日本、新加坡、香港标记节点；X/Grok 共用 AI 候选。
 - 若某服务筛选后没有候选节点，该服务组会使用 `REJECT`，不会自动放宽筛选条件。
 
 ## 修改脚本时

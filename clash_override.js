@@ -24,7 +24,7 @@
  * 不验证登录态、API 可用性或账号地区资格。
  *
  * Google（含 Gemini）：
- * 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国、日本，
+ * 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国，
  * 否则（云）限定美国、日本、新加坡、台湾，并均排除名称标记为 IPv6/V6 的节点。
  * Google 与 Gemini 的远程规则集都指向这个组。
  *
@@ -144,7 +144,7 @@ function main(config) {
 
   // 2.5 美国节点识别
   //
-  // Meta AI、Muse 组使用美国和新加坡；Google 组按是否自带“♻️ 自动选择”筛选美国/日本或美/日/新/台。
+  // Meta AI、Muse 组使用美国和新加坡；Google 组按是否自带“♻️ 自动选择”筛选美国或美/日/新/台。
   //
   // 只根据节点名称判断，不检测真实出口 IP。
   //
@@ -281,12 +281,12 @@ function main(config) {
 
   // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
-  // 原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国、日本，否则（云）保留美国、日本、新加坡、台湾。
+  // 原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国，否则（云）保留美国、日本、新加坡、台湾。
   const googleNames = aiNames.filter(
     (name) =>
       !IPV6_NODE.test(name) &&
       (existingAuto
-        ? US.test(name) || JAPAN.test(name)
+        ? US.test(name)
         : US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
   );
 
