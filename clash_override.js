@@ -393,6 +393,9 @@ function main(config) {
       rules: [
         "DOMAIN-SUFFIX,gemini.google.com",
         "DOMAIN-SUFFIX,generativelanguage.googleapis.com",
+        "DOMAIN-SUFFIX,cloudcode-pa.googleapis.com",
+        "DOMAIN-SUFFIX,daily-cloudcode-pa.googleapis.com",
+        "DOMAIN-SUFFIX,aicode.googleapis.com",
         "DOMAIN-SUFFIX,google.com",
         "DOMAIN-SUFFIX,google.com.hk"
       ],
@@ -569,8 +572,37 @@ function main(config) {
       group.type === "select" && typeof group.name === "string" && group.name.includes("手动选择")
   );
 
+  // 规则集下载优先走“手动选择”；若订阅无同名组（例如 PAOLUZ 主组为“🦊 PAOLUZ”），
+  // 则回退到原配置首个可用的代理 select 组，避免退回 DIRECT 导致直连 GitHub 拉取失败。
   // 不直接把 url-test 组作为规则集下载代理；Mihomo 曾报告该用法会拉取失败。
-  const RULE_PROVIDER_PROXY = manualGroup ? manualGroup.name : "DIRECT";
+  const allNameSet = new Set(allNames);
+  const NON_PROXY_SELECT =
+    /广告|拦截|屏蔽|拒|阻断|直连|绕过|国内|白名单|黑名单|Block|Reject|Direct|AdBlock|Hijacking/i;
+  const BUILTIN_NON_PROXY_TARGETS = new Set(["DIRECT", "REJECT", "REJECT-DROP", "PASS"]);
+
+  function isUsableProxySelectGroup(group) {
+    return (
+      group &&
+      group.type === "select" &&
+      typeof group.name === "string" &&
+      group.name.trim() !== "" &&
+      !NON_PROXY_SELECT.test(group.name) &&
+      Array.isArray(group.proxies) &&
+      group.proxies.length > 0 &&
+      !BUILTIN_NON_PROXY_TARGETS.has(group.proxies[0])
+    );
+  }
+
+  const ruleProviderProxyGroup =
+    manualGroup ||
+    keptGroups.find(
+      (group) =>
+        isUsableProxySelectGroup(group) &&
+        group.proxies.some((item) => item === AUTO_NAME || allNameSet.has(item))
+    ) ||
+    keptGroups.find((group) => isUsableProxySelectGroup(group));
+
+  const RULE_PROVIDER_PROXY = ruleProviderProxyGroup ? ruleProviderProxyGroup.name : "DIRECT";
 
   if (manualGroup && !existingAuto) {
     const choices = Array.isArray(manualGroup.proxies) ? manualGroup.proxies : [];
@@ -589,7 +621,7 @@ function main(config) {
   // 远程规则集和静态兜底规则都指向同一组。
   //
   // 主要服务的扩展域名由 MetaCubeX MRS 规则集维护，
-  // 并经“手动选择”组下载；每天检查更新。
+  // 优先经“手动选择”或原配置首个可用代理 select 组下载；每天检查更新。
   // 少量核心域名保留静态兜底，规则集暂时不可用时仍可路由。
   // 最终仍应检查客户端生成的有效配置和连接记录。
 
@@ -691,7 +723,41 @@ function main(config) {
   }
 
   // ==========================================================
-  // 8.3 合并最终分流规则
+  // 8.3 默认开启域名嗅探（Sniffer）
+  // ==========================================================
+  //
+  // 仅在原配置未启用 sniffer 时补齐默认配置，
+  // 防止 TUN 模式下未携带域名的纯 IP 连接绕过域名规则。
+
+  const existingSniffer =
+    config.sniffer && typeof config.sniffer === "object" && !Array.isArray(config.sniffer)
+      ? config.sniffer
+      : null;
+
+  if (!existingSniffer || existingSniffer.enable !== true) {
+    config.sniffer = {
+      enable: true,
+      "force-dns-mapping": true,
+      "parse-pure-ip": true,
+      "override-destination": true,
+      sniff: {
+        HTTP: {
+          ports: ["80", "8080-8880"],
+          "override-destination": true
+        },
+        TLS: {
+          ports: ["443", "8443"]
+        },
+        QUIC: {
+          ports: ["443", "8443"]
+        }
+      },
+      "skip-domain": ["Mijia Cloud", "+.push.apple.com"]
+    };
+  }
+
+  // ==========================================================
+  // 8.4 合并最终分流规则
   // ==========================================================
   //
   // 优先级：

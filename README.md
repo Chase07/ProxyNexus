@@ -12,7 +12,8 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 2. 为 APNs、OpenAI/ChatGPT、Google/Gemini、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
 3. 保留机场已有的 `♻️ 自动选择` 组；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
 4. 注册服务规则集，并把服务规则放在原配置规则之前。
-5. 将更新后的配置返回给客户端。
+5. 在原配置未启用 `sniffer` 时补齐默认域名嗅探配置，防止纯 IP 连接绕过域名规则。
+6. 将更新后的配置返回给客户端。
 
 ## 服务分流
 
@@ -20,7 +21,7 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。�
 | --- | --- | --- | --- | --- |
 | `APNs_Auto` | `https://captive.apple.com/hotspot-detect.html`（预期 HTTP 200） | 名称标记为美国、日本、新加坡、香港的通用服务候选 | `push.apple.com`、`push.apple.com.cn` 及模块列出的其他域名和 IP 网段 | — |
 | `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选 | `openai.com`、`chatgpt.com` | `openai.mrs` |
-| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国、日本，否则保留美国、日本、新加坡、台湾 | `gemini.google.com`、`generativelanguage.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
+| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国、日本，否则保留美国、日本、新加坡、台湾 | `gemini.google.com`、`generativelanguage.googleapis.com`、`cloudcode-pa.googleapis.com`、`daily-cloudcode-pa.googleapis.com`、`aicode.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
 | `Claude_Auto` | `https://claude.ai/` | AI 候选 | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
 | `SpaceX_Auto` | `https://x.com/` | AI 候选 | `grok.com`、`x.ai`、`grok.x.com`、`x.com`、`twitter.com`、`twimg.com`、`t.co` | `xai.mrs`、`x.mrs`、`twitter.mrs` |
 | `Meta_Auto` | `https://meta.ai/` | AI 候选中名称标记为美国或新加坡的节点 | `meta.ai`、`muse.ai` | `facebook.mrs`、`instagram.mrs`、`threads.mrs`、`whatsapp.mrs`、`messenger.mrs`、`meta.mrs`、`oculus.mrs` |
@@ -62,7 +63,7 @@ https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite
 https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google-gemini.mrs
 ```
 
-这些域名分类由 MetaCubeX 的开源规则库维护，不是相应服务厂商的官方域名清单，也不是客户端通过 DNS 自动发现的结果。脚本将 provider 设置为 `behavior: domain`、`format: mrs`，更新间隔为 `86400` 秒。下载使用配置中名称包含“手动选择”的 `select` 组；找不到该组时使用 `DIRECT`。
+这些域名分类由 MetaCubeX 的开源规则库维护，不是相应服务厂商的官方域名清单，也不是客户端通过 DNS 自动发现的结果。脚本将 provider 设置为 `behavior: domain`、`format: mrs`，更新间隔为 `86400` 秒。下载优先使用配置中名称包含“手动选择”的 `select` 组；找不到时自动回退到原配置中首个可用的代理 `select` 组（避开广告过滤、屏蔽及默认直连/拒绝类组，优先匹配包含 `♻️ 自动选择` 或静态节点的组）；仍不存在时回退 `DIRECT`。
 
 配置规则按以下顺序合并：
 
@@ -71,6 +72,8 @@ https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/goog
 3. 原配置中的规则。
 
 Tailscale 直连规则包含隧道网段 `100.64.0.0/10`、`fd7a:115c:a1e0::/48`、MagicDNS 域名 `ts.net` 以及 Tailscale 进程名（`io.tailscale.ipn.macsys.network-extension`、`IPNExtension`、`Tailscale`、`tailscaled`），放在服务规则和原配置规则之前；该设置会让 Tailscale 守护进程自身流量走 `DIRECT`（不影响浏览器访问网页登录）。当原配置已存在 `tun` 对象时，脚本会向 `tun.route-exclude-address` 合并追加 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48`（不改变 `tun.enable`）；当已存在 `dns` 对象且 `fake-ip-filter-mode` 未设置或为 `blacklist` 时，会向 `dns.fake-ip-filter` 合并追加 `+.ts.net`。部分 GUI 客户端会在覆写脚本之后以界面全局 TUN/DNS 设置覆盖 `tun` / `dns` 字段，启用 TUN 模式后需在客户端界面确认路由排除并在系统侧实测生效。
+
+当原配置未提供 `sniffer` 或 `sniffer.enable` 不为 `true` 时，脚本会默认写入启用配置（开启 `force-dns-mapping`、`parse-pure-ip`、`override-destination`，嗅探 HTTP `80`/`8080-8880`、TLS `443`/`8443` 与 QUIC `443`/`8443`，并在 `skip-domain` 中保留 `Mijia Cloud` 与 `+.push.apple.com`）；若原配置已启用 `sniffer`，则保持原配置不变。部分客户端界面覆写可能会覆盖 `sniffer` 字段，生效情况需以客户端日志为准。
 
 Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome 搜索和 Gemini 等 Google 域名共用这个组。X、Twitter 与 Grok 的静态规则和三个远程规则集都指向 `SpaceX_Auto`，所以 `grok.x.com` 与 `x.com` 的规则匹配顺序不会把它们分到不同组。
 
