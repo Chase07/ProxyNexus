@@ -46,8 +46,9 @@
  *   rule-provider 代理选择与默认 sniffer 配置；
  * - 将桌面端 DIRECT + TUN 排除替换为 Mihomo 内置 type: tailscale 出站（节点名 Tailscale），
  *   并将 Tailscale 分流规则插在最前面，避免手机端同时开启官方 Tailscale App 造成 VPN 冲突；
- * - 省略 auth-key：首次访问 Tailscale 地址时，Mihomo 会在客户端 info 日志输出授权链接，
- *   点开登录一次即可将状态持久化到本地 state-dir（建议在 Tailscale 后台关闭该设备密钥过期）；
+ * - 省略默认 auth-key：默认将 TAILSCALE_AUTH_KEY 留空（仅非空时写入 auth-key），既可通过首次
+ *   日志授权链接登录并持久化到本地 state-dir，也可临时填入一次性 auth-key 上线后再恢复留空；
+ *   建议在 Tailscale 后台关闭该设备密钥过期；
  * - 公开脚本切勿写入任何真实密钥、Auth Key、个人 Tailnet 后缀或内网 IP。
  *
  *【兼容范围】
@@ -98,9 +99,12 @@ function main(config) {
     "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite";
   const RULE_PROVIDER_INTERVAL = 86400;
 
-  // 手机端内置 Tailscale 出站参数（省略 auth-key，首次由日志授权链接登录并持久化）：
+  // 手机端内置 Tailscale 出站参数：
+  // - TAILSCALE_AUTH_KEY 默认留空；仅非空时写入 auth-key（可由日志链接授权，或临时填入一次性 key 上线后再清空）。
+  // - 公开仓库切勿写入真实密钥。
   const TAILSCALE_PROXY_NAME = "Tailscale";
   const TAILSCALE_HOSTNAME = "phone-clash";
+  const TAILSCALE_AUTH_KEY = "";
   // 部分客户端若不支持 dns.nameserver-policy 中的 ts://Tailscale，可改为 false，
   // 仅保留 IP-CIDR 规则通过 Tailscale 内网 IP（如 http://100.x.x.x:<端口>）直连。
   const TAILSCALE_USE_MAGIC_DNS = true;
@@ -755,25 +759,29 @@ function main(config) {
   // ==========================================================
   //
   // 在保留原订阅配置的基础上追加 Mihomo 内置 type: tailscale 节点，
-  // 并配置 MagicDNS（ts://Tailscale）与前置规则；默认省略 auth-key。
+  // 并配置 MagicDNS（ts://Tailscale）、Fake-IP 过滤与前置规则；TAILSCALE_AUTH_KEY 非空时才写入 auth-key。
 
   const tailscaleExcludeSet = new Set(["100.64.0.0/10", "fd7a:115c:a1e0::/48"]);
+  const tailscaleAuthKey =
+    typeof TAILSCALE_AUTH_KEY === "string" ? TAILSCALE_AUTH_KEY.trim() : "";
   const existingProxies = Array.isArray(config.proxies) ? config.proxies : [];
   const hasTailscaleProxy = existingProxies.some(
     (node) => node && node.name === TAILSCALE_PROXY_NAME
   );
 
   if (!hasTailscaleProxy) {
-    config.proxies = [
-      ...existingProxies,
-      {
-        name: TAILSCALE_PROXY_NAME,
-        type: "tailscale",
-        hostname: TAILSCALE_HOSTNAME,
-        ephemeral: false,
-        udp: true
-      }
-    ];
+    const tailscaleProxy = {
+      name: TAILSCALE_PROXY_NAME,
+      type: "tailscale",
+      hostname: TAILSCALE_HOSTNAME,
+      ephemeral: false,
+      udp: true
+    };
+    if (tailscaleAuthKey !== "") {
+      tailscaleProxy["auth-key"] = tailscaleAuthKey;
+    }
+
+    config.proxies = [...existingProxies, tailscaleProxy];
   } else {
     config.proxies = existingProxies;
   }
@@ -795,14 +803,27 @@ function main(config) {
       ...existingPolicy,
       "+.ts.net": "ts://" + TAILSCALE_PROXY_NAME
     };
+  }
 
-    if (!config.dns["fake-ip-filter-mode"] || config.dns["fake-ip-filter-mode"] === "blacklist") {
-      const existingFakeIpFilters = Array.isArray(config.dns["fake-ip-filter"])
-        ? config.dns["fake-ip-filter"]
-        : [];
-
-      config.dns["fake-ip-filter"] = [...new Set([...existingFakeIpFilters, "+.ts.net"])];
+  // 避免 controlplane.tailscale.com / DERP 等控制面域名在 fake-ip 模式下被解析为 198.18.x.x 假 IP，
+  // 导致 tsnet LookupHook -> SystemDialer 拨号假 IP 超时。
+  if (
+    config.dns &&
+    typeof config.dns === "object" &&
+    !Array.isArray(config.dns) &&
+    (!config.dns["fake-ip-filter-mode"] || config.dns["fake-ip-filter-mode"] === "blacklist")
+  ) {
+    const existingFakeIpFilters = Array.isArray(config.dns["fake-ip-filter"])
+      ? config.dns["fake-ip-filter"]
+      : [];
+    const tailscaleFakeIpFilters = ["+.tailscale.com", "+.tailscale.io"];
+    if (TAILSCALE_USE_MAGIC_DNS) {
+      tailscaleFakeIpFilters.push("+.ts.net");
     }
+
+    config.dns["fake-ip-filter"] = [
+      ...new Set([...existingFakeIpFilters, ...tailscaleFakeIpFilters])
+    ];
   }
 
   if (
