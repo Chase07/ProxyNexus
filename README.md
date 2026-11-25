@@ -1,6 +1,9 @@
 # ProxyNexus
 
-ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本。当前脚本为 [`clash_override.js`](clash_override.js)，通过 `main(config)` 修改配置并返回结果。
+ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本：
+
+- [`clash_override.js`](clash_override.js)：通用版 JavaScript 覆写脚本（桌面端及分享通用），通过 `main(config)` 保留全部服务分流并将 Tailscale 设为直连/排除，便于与官方 Tailscale App 共存。
+- [`clash_override_mobile.js`](clash_override_mobile.js)：手机端专用版 JavaScript 覆写脚本，保留全部分流与测速规则的同时改为注入 Mihomo 内置 `type: tailscale` 出站（省略 `auth-key`，靠首次日志授权链接登录持久化），免除手机端双 VPN 冲突。
 
 脚本面向支持 Mihomo 配置结构、JavaScript 覆写接口和 HTTP rule-provider 的客户端。客户端及内核版本可能影响具体支持情况；导入后应在客户端检查生成的配置与规则提供者状态。
 
@@ -67,11 +70,15 @@ https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/goog
 
 配置规则按以下顺序合并：
 
-1. 嘉信域名与 Tailscale 直连规则。
+1. 通用版 [`clash_override.js`](clash_override.js) 为嘉信域名与 Tailscale 直连规则；手机端版 [`clash_override_mobile.js`](clash_override_mobile.js) 为 Tailscale 内置出站规则（置于全部规则最前面）与嘉信直连规则。
 2. 各服务的静态规则和远程 `RULE-SET` 引用，顺序与 `serviceDefinitions` 一致。
-3. 原配置中的规则。
+3. 原配置中的规则（手机端版会按去空白精确去重已注入的 Tailscale 规则）。
 
-Tailscale 直连规则包含隧道网段 `100.64.0.0/10`、`fd7a:115c:a1e0::/48`、MagicDNS 域名 `ts.net` 以及 Tailscale 进程名（`io.tailscale.ipn.macsys.network-extension`、`IPNExtension`、`Tailscale`、`tailscaled`），放在服务规则和原配置规则之前；该设置会让 Tailscale 守护进程自身流量走 `DIRECT`（不影响浏览器访问网页登录）。当原配置已存在 `tun` 对象时，脚本会向 `tun.route-exclude-address` 合并追加 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48`（不改变 `tun.enable`）；当已存在 `dns` 对象且 `fake-ip-filter-mode` 未设置或为 `blacklist` 时，会向 `dns.fake-ip-filter` 合并追加 `+.ts.net`。部分 GUI 客户端会在覆写脚本之后以界面全局 TUN/DNS 设置覆盖 `tun` / `dns` 字段，启用 TUN 模式后需在客户端界面确认路由排除并在系统侧实测生效。
+Tailscale 接入提供两套免密钥方案，分别对应桌面端与手机端：
+
+- **通用版（[`clash_override.js`](clash_override.js)，桌面端配合官方 Tailscale App）**：生成 `100.64.0.0/10`、`fd7a:115c:a1e0::/48`、MagicDNS 域名 `ts.net` 以及 Tailscale 进程名（`io.tailscale.ipn.macsys.network-extension`、`IPNExtension`、`Tailscale`、`tailscaled`）的 `DIRECT` 规则，让 Tailscale 守护进程自身流量走直连（不影响浏览器访问网页登录）。当原配置已存在 `tun` 对象时，脚本会向 `tun.route-exclude-address` 合并追加 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48`（不改变 `tun.enable`）；当已存在 `dns` 对象且 `fake-ip-filter-mode` 未设置或为 `blacklist` 时，会向 `dns.fake-ip-filter` 合并追加 `+.ts.net`。部分 GUI 客户端会在覆写脚本之后以界面全局 TUN/DNS 设置覆盖 `tun` / `dns` 字段，启用 TUN 模式后需在客户端界面确认路由排除并在系统侧实测生效。
+- **手机端专用版（[`clash_override_mobile.js`](clash_override_mobile.js)，免与官方 Tailscale App VPN 冲突）**：在保留全部服务分流与测速策略的基础上，非破坏性追加 Mihomo 内置 `type: tailscale` 节点（`name: "Tailscale"`、`hostname: "phone-clash"`、`ephemeral: false`、`udp: true`），同时从自动测速与服务测速候选集中排除该节点；从 `tun.route-exclude-address` 中剔除 `100.64.0.0/10` 与 `fd7a:115c:a1e0::/48` 以免手机 TUN 流量绕过内置出站；并将 `DOMAIN-SUFFIX,ts.net,Tailscale`、`IP-CIDR,100.64.0.0/10,Tailscale,no-resolve` 与 `IP-CIDR6,fd7a:115c:a1e0::/48,Tailscale,no-resolve` 插在全部规则最前面。当 `TAILSCALE_USE_MAGIC_DNS = true`（默认）时，会确保 `dns.enable = true` 并合并 `"+.ts.net": "ts://Tailscale"` 到 `dns.nameserver-policy`（同时在黑名单模式下合并 `+.ts.net` 到 `dns.fake-ip-filter`）；若客户端不支持 `ts://Tailscale`，把顶部 `TAILSCALE_USE_MAGIC_DNS` 设为 `false` 即可降级为仅靠 `IP-CIDR` 走内网 IP（如 `http://100.x.x.x:<端口>`）直连。
+- **免密钥授权与排错验证**：[`clash_override_mobile.js`](clash_override_mobile.js) 省略 `auth-key` 且不包含个人 Tailnet 信息，可直接通过仓库 Raw URL 订阅更新；首次触发 Tailscale 流量时，`tsnet` 会延迟冷启动（首包若微超时属正常，等几秒重试即可），同时客户端 `info` 日志会打印一条登录授权链接，点开授权一次即可将凭证持久化到本地 `state-dir`（建议在 Tailscale 管理后台为对应设备开启 `Disable key expiry`）。若日志报 `unsupported proxy type: tailscale`，说明该客户端内核编译未包含 Tailscale 支持（需 Mihomo 支持 `with_gvisor` 且未加 `no_tailscale`，例如 iOS Stash 等不支持的客户端需更换或改回通用版）。生效后可在手机浏览器访问对应设备 MagicDNS（如 `https://<设备名>.<你的tailnet>.ts.net`）或内网 IP（`http://100.x.x.x:<端口>`），并在目标电脑运行 `tailscale status` 确认设备在线。
 
 当原配置未提供 `sniffer` 或 `sniffer.enable` 不为 `true` 时，脚本会默认写入启用配置（开启 `force-dns-mapping`、`parse-pure-ip`、`override-destination`，嗅探 HTTP `80`/`8080-8880`、TLS `443`/`8443` 与 QUIC `443`/`8443`，并在 `skip-domain` 中保留 `Mijia Cloud` 与 `+.push.apple.com`）；若原配置已启用 `sniffer`，则保持原配置不变。部分客户端界面覆写可能会覆盖 `sniffer` 字段，生效情况需以客户端日志为准。
 
