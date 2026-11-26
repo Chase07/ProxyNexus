@@ -25,8 +25,8 @@
  *
  * Google（含 Gemini / Antigravity）与 YouTube：
  * YouTube 单独使用 YouTube_Auto（youtube.mrs + 静态核心视频域名），避免视频流量占用 GCP 落地。
- * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国，
- * 否则（云）限定美国、日本、新加坡、台湾，并均排除名称标记为 IPv6/V6 的节点。
+ * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；统一限定美国、日本、新加坡、台湾，
+ * 并排除名称标记为 IPv6/V6 的节点（防送中主力由 AI_GCP_Exit / GCP-落地 承担）。
  * 启用 GCP-落地（顶部填入 GCP_SS_SERVER 与 GCP_SS_PASSWORD）后，将注入 Shadowsocks-2022 节点 GCP-落地
  * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建 AI_GCP_Exit 组接管 OpenAI/ChatGPT、
  * Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名；其余 google.mrs 流量仍走 Google_Auto。
@@ -165,7 +165,7 @@ function main(config) {
 
   // 2.5 美国节点识别
   //
-  // Meta AI、Muse 组使用美国和新加坡；Google 组按是否自带“♻️ 自动选择”筛选美国或美/日/新/台。
+  // Meta AI、Muse 组使用美国和新加坡；Google 组统一使用美国、日本、新加坡、台湾。
   //
   // 只根据节点名称判断，不检测真实出口 IP。
   //
@@ -298,7 +298,7 @@ function main(config) {
 
   // 4.4 识别原配置是否已自带普通自动选择组，并筛选 Meta AI / Muse 与 Google 候选节点。
   //
-  // 仅依据原配置 proxy-groups 是否存在同名“♻️ 自动选择”组做区分，不读取外部订阅来源。
+  // existingAuto 仅用于第六、七层判断是否为“云”补建“♻️ 自动选择”；Google_Auto 不再按订阅收窄地区。
   const AUTO_NAME = "♻️ 自动选择";
   const oldGroups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
   const existingAuto = oldGroups.find((group) => group && group.name === AUTO_NAME);
@@ -308,13 +308,11 @@ function main(config) {
 
   // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
-  // 原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国，否则（云）保留美国、日本、新加坡、台湾。
+  // 统一保留美国、日本、新加坡、台湾节点（AI 防送中核心流量已交由 GCP-落地 承接）。
   const googleNames = aiNames.filter(
     (name) =>
       !IPV6_NODE.test(name) &&
-      (existingAuto
-        ? US.test(name)
-        : US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
+      (US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
   );
 
   // ==========================================================
