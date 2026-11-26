@@ -26,18 +26,19 @@
  * Google（含 Gemini / Antigravity）与 YouTube：
  * YouTube 单独使用 YouTube_Auto（youtube.mrs + 静态核心视频域名），避免视频流量占用 GCP 落地。
  * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；统一限定美国、日本、新加坡、台湾，
- * 并排除名称标记为 IPv6/V6 的节点（防送中主力由 AI_GCP_Exit / GCP-落地 承担）。
+ * 并排除名称标记为 IPv6/V6 的节点（防送中主力由 Google_GCP / GCP-落地 承担）。
  * 启用 GCP-落地（顶部填入 GCP_SS_SERVER 与 GCP_SS_PASSWORD）后，将注入 Shadowsocks-2022 节点 GCP-落地
- * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建 AI_GCP_Exit 组接管 OpenAI/ChatGPT、
- * Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名；其余 google.mrs 流量仍走 Google_Auto。
+ * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建各自独立的 fallback 自动容灾组
+ * （Google_GCP / ChatGPT_GCP / Claude_GCP / Muse_GCP）：正常时优先走 GCP-落地，
+ * 当 GCP-落地 不可用时自动回退各自原服务自动组；其余 google.mrs 与 Meta 旗下大流量仍走机场。
  *
  * X 与 Grok：
  * 共用 SpaceX_Auto，使用 X 网站测速并合并两类域名规则。
  *
  * Meta 旗下产品与 Muse：
  * Meta AI、Facebook、Instagram、Threads、WhatsApp、Messenger、Oculus/Quest
- * 使用 MetaCubeX 对应远程域名集，并与 Muse 共用美国和新加坡节点组 Meta_Auto。
- * meta.ai 和 muse.ai 保留静态后缀规则。
+ * 使用 MetaCubeX 对应远程域名集，并与 meta.ai 共用美国和新加坡节点组 Meta_Auto。
+ * 启用 GCP-落地 时仅 muse.ai 切入 Muse_GCP（[GCP-落地, Meta_Auto]），其余 Meta 流量仍在机场。
  *
  * GitHub：
  * 单独测速。
@@ -116,7 +117,7 @@ function main(config) {
   // 公开仓库切勿写入真实服务器 IP 或密钥。
   const GCP_PROXY_NAME = "GCP-落地";
   const GCP_RELAY_GROUP_NAME = "GCP_前置";
-  const AI_GCP_GROUP_NAME = "AI_GCP_Exit";
+  const GCP_FALLBACK_INTERVAL = 120;
   const GCP_SS_SERVER = "";
   const GCP_SS_PORT = 38443;
   const GCP_SS_CIPHER = "2022-blake3-aes-128-gcm";
@@ -389,6 +390,19 @@ function main(config) {
     };
   }
 
+  function makeFallbackGroup(name, url, proxies, expectedStatus, interval) {
+    return {
+      name,
+      type: "fallback",
+      proxies,
+      url,
+      interval,
+      timeout: TEST_TIMEOUT,
+      "expected-status": expectedStatus,
+      lazy: true
+    };
+  }
+
   const gcpServer = typeof GCP_SS_SERVER === "string" ? GCP_SS_SERVER.trim() : "";
   const gcpPassword = typeof GCP_SS_PASSWORD === "string" ? GCP_SS_PASSWORD.trim() : "";
   const gcpCipher =
@@ -400,7 +414,6 @@ function main(config) {
     Number.isInteger(gcpPortNum) && gcpPortNum > 0 && gcpPortNum <= 65535 ? gcpPortNum : 38443;
   const gcpCustomDialer = typeof GCP_DIALER_PROXY === "string" ? GCP_DIALER_PROXY.trim() : "";
   const hasGcpExit = gcpServer !== "" && gcpPassword !== "";
-  const aiGcpTarget = hasGcpExit ? AI_GCP_GROUP_NAME : null;
 
   // 每项把策略组、测速目标、候选节点、规则集和静态兜底放在一起，
   // 避免新增服务时只加了分组或分流规则中的一部分。
@@ -447,7 +460,8 @@ function main(config) {
 
     {
       name: "ChatGPT_Auto",
-      target: aiGcpTarget,
+      gcpGroup: "ChatGPT_GCP",
+      target: hasGcpExit ? "ChatGPT_GCP" : null,
       url: "https://chatgpt.com/",
       candidates: aiNames,
       expectedStatus: SERVICE_STATUS,
@@ -463,11 +477,12 @@ function main(config) {
 
     {
       name: "Google_Auto",
+      gcpGroup: "Google_GCP",
       url: "https://www.google.com/",
       candidates: googleNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      priorityTarget: aiGcpTarget,
+      priorityTarget: hasGcpExit ? "Google_GCP" : null,
       priorityRules: [
         "DOMAIN-SUFFIX,gemini.google.com",
         "DOMAIN-SUFFIX,aistudio.google.com",
@@ -498,7 +513,8 @@ function main(config) {
 
     {
       name: "Claude_Auto",
-      target: aiGcpTarget,
+      gcpGroup: "Claude_GCP",
+      target: hasGcpExit ? "Claude_GCP" : null,
       url: "https://claude.ai/",
       candidates: aiNames,
       expectedStatus: SERVICE_STATUS,
@@ -531,11 +547,15 @@ function main(config) {
 
     {
       name: "Meta_Auto",
+      gcpGroup: "Muse_GCP",
+      gcpUrl: "https://muse.ai/",
       url: "https://meta.ai/",
       candidates: metaNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: ["DOMAIN-SUFFIX,meta.ai", "DOMAIN-SUFFIX,muse.ai"],
+      priorityTarget: hasGcpExit ? "Muse_GCP" : null,
+      priorityRules: ["DOMAIN-SUFFIX,muse.ai"],
+      rules: ["DOMAIN-SUFFIX,meta.ai"],
       ruleSets: [
         { name: "proxynexus_meta_facebook", file: "facebook.mrs" },
         { name: "proxynexus_meta_instagram", file: "instagram.mrs" },
@@ -587,13 +607,20 @@ function main(config) {
   // 删除与我们专用组同名的旧定义，
   // 避免重复创建。
 
-  // 清理已合并组的旧名称，避免反复覆写时残留重复组。
-  const retiredGroupNames = ["Gemini_Auto", "Grok_Auto", "X_Auto", "Muse_Auto", "X_Grok_Auto"];
+  // 清理已合并或已切换为按服务拆分容灾组的旧名称，避免反复覆写时残留重复组。
+  const retiredGroupNames = [
+    "Gemini_Auto",
+    "Grok_Auto",
+    "X_Auto",
+    "Muse_Auto",
+    "X_Grok_Auto",
+    "AI_GCP_Exit"
+  ];
 
   const dedicatedNames = new Set([
     ...dedicatedGroups.map((group) => group.name),
+    ...serviceDefinitions.map((service) => service.gcpGroup).filter(Boolean),
     ...retiredGroupNames,
-    AI_GCP_GROUP_NAME,
     GCP_RELAY_GROUP_NAME
   ]);
 
@@ -685,7 +712,7 @@ function main(config) {
   //
   // 最终顺序：
   //
-  // ① 启用 GCP-落地 时的 AI_GCP_Exit 与 GCP_前置 组
+  // ① 启用 GCP-落地 时的按服务 fallback 容灾组与 GCP_前置 组
   // ② 各服务专用组
   // ③ 原机场的所有其他代理组
   // ④ 仅在缺失时新增的普通自动组
@@ -757,11 +784,19 @@ function main(config) {
       ];
     }
 
-    gcpGroups.push({
-      name: AI_GCP_GROUP_NAME,
-      type: "select",
-      proxies: [GCP_PROXY_NAME, "Google_Auto", "ChatGPT_Auto", "Claude_Auto"]
-    });
+    serviceDefinitions
+      .filter((service) => service.gcpGroup)
+      .forEach((service) => {
+        gcpGroups.push(
+          makeFallbackGroup(
+            service.gcpGroup,
+            service.gcpUrl || service.url,
+            [GCP_PROXY_NAME, service.name],
+            service.expectedStatus,
+            GCP_FALLBACK_INTERVAL
+          )
+        );
+      });
 
     if (gcpCustomDialer === "") {
       const relayChoices = [
