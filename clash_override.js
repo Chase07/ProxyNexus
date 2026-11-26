@@ -7,26 +7,26 @@
  *
  * 云：
  * 没有“♻️ 自动选择”组。
- * 自动创建该组，并包含全部静态代理节点。
+ * 自动创建该组，按节点名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点（保留移动/电信/三网及香港等地区）。
  * 同时将其加入“🔰 手动选择”作为第一个选项。
  *
  * PAOLUZ：
  * 已经自带“♻️ 自动选择”组。
- * 直接保留机场原有的测速组及候选节点。
- * 不重复创建；仅将已知明文 http:// 测速地址（如 gstatic/cloudflare generate_204）升级为 https://。
+ * 保留原组位置与测速参数（仅将已知明文 http:// 测速地址如 gstatic/cloudflare generate_204 升级为 https://），
+ * 并按与“云”一致的规则过滤其静态节点名单（按名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点）。
  *
  *【服务专用代理组】
  *
  * ChatGPT/OpenAI、Claude：
  * 各自使用对应网站测速和服务规则集。
- * 排除香港、纯联通、指定地区、高倍率节点。
+ * 排除香港、IPv6/V6、纯联通、指定地区、高倍率节点。
  * 测速只检查探测网址的 HTTP 状态和延迟，
  * 不验证登录态、API 可用性或账号地区资格。
  *
  * Google（含 Gemini / Antigravity）与 YouTube：
  * YouTube 单独使用 YouTube_Auto（youtube.mrs + 静态核心视频域名），避免视频流量占用 GCP 落地。
- * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；统一限定美国、日本、新加坡、台湾，
- * 并排除名称标记为 IPv6/V6 的节点（防送中主力由 AI_GCP_Exit / GCP-落地 承担）。
+ * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；统一限定美国、日本、新加坡、台湾
+ * （各服务组均已排除名称标记为 IPv6/V6 的节点；防送中主力由 Google_GCP / GCP-落地 承担）。
  * 启用 GCP-落地（顶部填入 GCP_SS_SERVER 与 GCP_SS_PASSWORD）后，将注入 Shadowsocks-2022 节点 GCP-落地
  * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建各自独立的 fallback 自动容灾组
  * （Google_GCP / ChatGPT_GCP / Claude_GCP / Muse_GCP）：正常时优先走 GCP-落地，
@@ -67,9 +67,8 @@ function main(config) {
   // 第一层：常用参数
   // ==========================================================
 
-  // 服务专用组最高允许的流量倍率。
+  // 服务专用组及“♻️ 自动选择”（含脚本补建与原配置自带的静态节点名单）最高允许的流量倍率。
   // 例如 [2.5] 可以进入，[4.0] 不可以。
-  // 此限制不作用于普通“♻️ 自动选择”。
   const MAX_MULTIPLIER = 3.0;
 
   // 没有倍率标签时暂按 1 倍处理。
@@ -79,9 +78,9 @@ function main(config) {
   // 服务专用组每 5 分钟测速一次。
   const SERVICE_TEST_INTERVAL = 300;
 
-  // 云的普通自动组：每 15 分钟测速一次。
+  // 云的普通自动组：每 10 分钟测速一次。
   // 用较长周期减少手机与电脑上的测速开销。
-  const NORMAL_TEST_INTERVAL = 900;
+  const NORMAL_TEST_INTERVAL = 600;
 
   // 自动测速切换容差，单位毫秒。
   // 适当放宽以减少网页浏览与 AI 使用时的频繁切节点。
@@ -115,10 +114,10 @@ function main(config) {
   // 第二层：筛选正则表达式
   // ==========================================================
   //
-  // 本层用于 AI / Google / X-Grok / Meta / GitHub 服务专用组。
+  // 本层用于服务专用组与“♻️ 自动选择”（两套订阅统一筛选标准）。
   //
-  // 普通自动选择组不经过这些筛选，
-  // 因为它的目的是提供完整的节点自动选择功能。
+  // “♻️ 自动选择”统一按节点名称排除机场信息、IPv6/V6、纯联通与高倍率节点，但不限制地区；
+  // 原配置自带“♻️ 自动选择”时同步过滤其静态节点名单，缺失时按同一标准新建。
 
   // 2.1 香港节点识别
   //
@@ -164,11 +163,13 @@ function main(config) {
     return /联通/.test(name) && !/移动|电信|三网/.test(name);
   }
 
-  // 2.5 美国节点识别
+  // 2.5 地区与 IPv6 节点标签识别
   //
+  // IPV6_NODE 按名称标签将 IPv6 / V6 节点统一排除在“♻️ 自动选择”、
+  // GCP_前置 与所有服务专用组之外（不检测真实出口协议）。
   // Meta AI、Muse 组使用美国和新加坡；Google 组统一使用美国、日本、新加坡、台湾。
   //
-  // 只根据节点名称判断，不检测真实出口 IP。
+  // 只根据节点名称判断，不检测真实出口 IP 或协议。
   //
   // 例如：
   // 美国 A01 → 命中
@@ -233,21 +234,26 @@ function main(config) {
   // 第四层：读取并筛选当前订阅节点
   // ==========================================================
 
-  // 4.1 获取普通自动选择组的候选节点
+  // 4.1 读取全部正常静态节点，并统一“♻️ 自动选择”的候选节点筛选规则
   //
-  // 保留所有正常节点：
-  // - 不限制地区（香港也允许）
-  // - 不限制运营商（联通也允许）
-  // - 不限制流量倍率
-  //
-  // 仅排除机场信息类、官网入口等特殊节点。
+  // allNames 保留所有非信息类静态节点（仅排除机场信息、官网入口与 GCP-落地）。
+  // isNormalAutoCandidateName / normalAutoNames 统一用于：
+  // - 缺少“♻️ 自动选择”的订阅（如云）新建普通自动组
+  // - 已自带“♻️ 自动选择”的订阅（如 PAOLUZ）过滤其静态候选节点
+  // - GCP_前置 的默认单节点列表
+  // 筛选标准：
+  // - 不限制地区（香港等地区均保留）
+  // - 保留移动、电信、三网及复合优化节点
+  // - 按节点名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点（不检测真实出口协议或计费倍率）
   //
   // 例如：
   // 1 官网 tcp.bet → 排除
   // 剩余流量 100GB → 排除
-  // 套餐到期提醒 → 排除
+  // IPv6 日本 C01 移动宽带优化 → 排除（IPv6）
+  // 香港 A02 联通优化 → 排除（纯联通）
+  // 美国 A03 [5x] → 排除（高倍率）
   // 日本 A01 移动优化 → 保留
-  // 香港 A02 联通优化 → 保留
+  // 台湾 C09 电信优化 → 保留
 
   const rawNodes = Array.isArray(config.proxies) ? config.proxies : [];
 
@@ -265,9 +271,23 @@ function main(config) {
     )
   ];
 
-  // 4.2 GitHub 和 X 的候选节点基线。
+  function isNormalAutoCandidateName(name) {
+    return (
+      typeof name === "string" &&
+      name !== GCP_PROXY_NAME &&
+      !INFO.test(name) &&
+      !IPV6_NODE.test(name) &&
+      !isUnicomOnly(name) &&
+      getMultiplier(name) <= MAX_MULTIPLIER
+    );
+  }
+
+  const normalAutoNames = allNames.filter(isNormalAutoCandidateName);
+
+  // 4.2 通用服务候选节点基线（YouTube、GitHub、APNs 及 AI 候选基础）。
   //
-  // 排除：
+  // 在 normalAutoNames 基础上进一步排除指定地区，即统一排除：
+  // IPv6 / V6
   // 指定地区
   // 纯联通
   // 机场信息
@@ -275,13 +295,7 @@ function main(config) {
   //
   // 但允许香港。
 
-  const generalServiceNames = allNames.filter(
-    (name) =>
-      !INFO.test(name) &&
-      !isUnicomOnly(name) &&
-      !REMOTE_REGION.test(name) &&
-      getMultiplier(name) <= MAX_MULTIPLIER
-  );
+  const generalServiceNames = normalAutoNames.filter((name) => !REMOTE_REGION.test(name));
 
   // 4.3 AI 专用节点。
   //
@@ -307,13 +321,11 @@ function main(config) {
   // Meta AI / Muse 只保留美国和新加坡节点。
   const metaNames = aiNames.filter((name) => US.test(name) || SINGAPORE.test(name));
 
-  // Google 组不使用名称明确标记为 IPv6 / V6 的节点。
+  // Google 组已通过 aiNames 排除名称标记为 IPv6 / V6 的节点与香港节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
   // 统一保留美国、日本、新加坡、台湾节点（AI 防送中核心流量已交由 GCP-落地 承接）。
   const googleNames = aiNames.filter(
-    (name) =>
-      !IPV6_NODE.test(name) &&
-      (US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name))
+    (name) => US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name)
   );
 
   // ==========================================================
@@ -581,7 +593,7 @@ function main(config) {
   // 没有自动选择 → 创建一个。
   //
   // PAOLUZ：
-  // 已经有自动选择 → 保留原版。
+  // 已经有自动选择 → 保留原组位置与测速参数，按统一规则过滤其静态节点名单。
   //
   // 不根据机场名字硬编码判断，
   // 而是检查当前配置中是否已经存在自动组。
@@ -664,30 +676,49 @@ function main(config) {
   if (!existingAuto) {
     // 当前机场没有“♻️ 自动选择”。
     //
-    // 为云订阅建立一个真正的自动测速组。
+    // 为云订阅建立一个自动测速组，按节点名称排除：
+    // - 机场信息类节点
+    // - IPv6 / V6 节点
+    // - 纯联通节点（保留移动、电信、三网优化）
+    // - 超过 MAX_MULTIPLIER（3 倍）的节点
+    // 不限制地区（香港等地区均保留）。
     //
-    // 使用全部静态节点：
-    // 不限制地区
-    // 不排除香港
-    // 不排除纯联通
-    // 不限制倍率
-    //
-    // 使用 1800 秒周期与 lazy 模式，
+    // 使用 NORMAL_TEST_INTERVAL（600 秒 / 10 分钟）周期与 lazy 模式，
     // 尽量降低后台测速频率。
 
     addedGroups.push(
       makeTestGroup(
         AUTO_NAME,
         "https://www.gstatic.com/generate_204",
-        allNames,
+        normalAutoNames,
         "204",
         NORMAL_TEST_INTERVAL
       )
     );
-  }
+  } else if (Array.isArray(existingAuto.proxies) && existingAuto.proxies.length > 0) {
+    // 原配置已自带“♻️ 自动选择”（如 PAOLUZ）：
+    // 保留原组位置与测速参数（已知明文 http:// 测速地址已在上方升级为 https://），
+    // 并按与“云”一致的规则过滤静态节点名单（不展开 proxy-providers / use）。
+    const filteredAutoProxies = [
+      ...new Set(existingAuto.proxies.filter((name) => isNormalAutoCandidateName(name)))
+    ];
+    const hasProviderUse = Array.isArray(existingAuto.use) && existingAuto.use.length > 0;
 
-  // 如果已经存在“♻️ 自动选择”，
-  // 则不重新创建，保留其原有节点名单与测速周期等参数（仅将已知明文 http:// 测速地址升级为 https://）。
+    if (filteredAutoProxies.length > 0) {
+      existingAuto.proxies = filteredAutoProxies;
+    } else if (hasProviderUse) {
+      delete existingAuto.proxies;
+    } else {
+      existingAuto.type = "select";
+      existingAuto.proxies = ["REJECT"];
+      delete existingAuto.url;
+      delete existingAuto.interval;
+      delete existingAuto.tolerance;
+      delete existingAuto.timeout;
+      delete existingAuto["expected-status"];
+      delete existingAuto.lazy;
+    }
+  }
 
   // ==========================================================
   // 第七层：合并所有代理组
@@ -782,10 +813,13 @@ function main(config) {
       });
 
     if (gcpCustomDialer === "") {
+      const relayNodeNames = normalAutoNames.length > 0 ? normalAutoNames : allNames;
       const relayChoices = [
-        ...(allNames.length === 0 && ruleProviderProxyGroup ? [ruleProviderProxyGroup.name] : []),
+        ...(relayNodeNames.length === 0 && ruleProviderProxyGroup
+          ? [ruleProviderProxyGroup.name]
+          : []),
         AUTO_NAME,
-        ...allNames.filter((name) => name !== AUTO_NAME && name !== GCP_PROXY_NAME)
+        ...relayNodeNames.filter((name) => name !== AUTO_NAME && name !== GCP_PROXY_NAME)
       ];
       gcpGroups.push({
         name: GCP_RELAY_GROUP_NAME,
