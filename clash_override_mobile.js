@@ -23,10 +23,13 @@
  * 测速只检查探测网址的 HTTP 状态和延迟，
  * 不验证登录态、API 可用性或账号地区资格。
  *
- * Google（含 Gemini）：
- * 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国，
+ * Google（含 Gemini / Antigravity）与 YouTube：
+ * YouTube 单独使用 YouTube_Auto（youtube.mrs + 静态核心视频域名），避免视频流量占用 GCP 落地。
+ * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时候选限定美国，
  * 否则（云）限定美国、日本、新加坡、台湾，并均排除名称标记为 IPv6/V6 的节点。
- * Google 与 Gemini 的远程规则集都指向这个组。
+ * 启用 GCP-落地（顶部填入 GCP_SS_SERVER 与 GCP_SS_PASSWORD）后，将注入 Shadowsocks-2022 节点 GCP-落地
+ * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建 AI_GCP_Exit 组接管 OpenAI/ChatGPT、
+ * Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名；其余 google.mrs 流量仍走 Google_Auto。
  *
  * X 与 Grok：
  * 共用 SpaceX_Auto，使用 X 网站测速并合并两类域名规则。
@@ -49,7 +52,7 @@
  * - 省略默认 auth-key：默认将 TAILSCALE_AUTH_KEY 留空（仅非空时写入 auth-key），既可通过首次
  *   日志授权链接登录并持久化到本地 state-dir，也可临时填入一次性 auth-key 上线后再恢复留空；
  *   建议在 Tailscale 后台关闭该设备密钥过期；
- * - 公开脚本切勿写入任何真实密钥、Auth Key、个人 Tailnet 后缀或内网 IP。
+ * - 公开脚本切勿写入任何真实密钥、Auth Key、服务器 IP、个人 Tailnet 后缀或内网 IP。
  *
  *【兼容范围】
  *
@@ -108,6 +111,19 @@ function main(config) {
   // 部分客户端若不支持 dns.nameserver-policy 中的 ts://Tailscale，可改为 false，
   // 仅保留 IP-CIDR 规则通过 Tailscale 内网 IP（如 http://100.x.x.x:<端口>）直连。
   const TAILSCALE_USE_MAGIC_DNS = true;
+
+  // GCP Shadowsocks-2022 落地节点（默认留空模板；填入服务器 IP 与密码后自动启用）。
+  // 公开仓库切勿写入真实服务器 IP 或密钥。
+  const GCP_PROXY_NAME = "GCP-落地";
+  const GCP_RELAY_GROUP_NAME = "GCP_前置";
+  const AI_GCP_GROUP_NAME = "AI_GCP_Exit";
+  const GCP_SS_SERVER = "";
+  const GCP_SS_PORT = 38443;
+  const GCP_SS_CIPHER = "2022-blake3-aes-128-gcm";
+  const GCP_SS_PASSWORD = "";
+  // 留空时自动创建独立的 GCP_前置 select 组（含 ♻️ 自动选择 与机场节点）；
+  // 也可改为已有代理组或节点名作为 dialer-proxy。
+  const GCP_DIALER_PROXY = "";
 
   // ==========================================================
   // 第二层：筛选正则表达式
@@ -258,6 +274,7 @@ function main(config) {
             typeof node.name === "string" &&
             node.type !== "tailscale" &&
             node.name !== TAILSCALE_PROXY_NAME &&
+            node.name !== GCP_PROXY_NAME &&
             !INFO.test(node.name)
         )
         .map((node) => node.name)
@@ -374,8 +391,22 @@ function main(config) {
     };
   }
 
+  const gcpServer = typeof GCP_SS_SERVER === "string" ? GCP_SS_SERVER.trim() : "";
+  const gcpPassword = typeof GCP_SS_PASSWORD === "string" ? GCP_SS_PASSWORD.trim() : "";
+  const gcpCipher =
+    typeof GCP_SS_CIPHER === "string" && GCP_SS_CIPHER.trim() !== ""
+      ? GCP_SS_CIPHER.trim()
+      : "2022-blake3-aes-128-gcm";
+  const gcpPortNum = Number(GCP_SS_PORT);
+  const gcpPort =
+    Number.isInteger(gcpPortNum) && gcpPortNum > 0 && gcpPortNum <= 65535 ? gcpPortNum : 38443;
+  const gcpCustomDialer = typeof GCP_DIALER_PROXY === "string" ? GCP_DIALER_PROXY.trim() : "";
+  const hasGcpExit = gcpServer !== "" && gcpPassword !== "";
+  const aiGcpTarget = hasGcpExit ? AI_GCP_GROUP_NAME : null;
+
   // 每项把策略组、测速目标、候选节点、规则集和静态兜底放在一起，
   // 避免新增服务时只加了分组或分流规则中的一部分。
+  // YouTube_Auto 置于 AI 与 Google 规则之前，防止视频流量落入 GCP 落地。
 
   const serviceDefinitions = [
     {
@@ -402,12 +433,33 @@ function main(config) {
     },
 
     {
+      name: "YouTube_Auto",
+      url: "https://www.youtube.com/",
+      candidates: generalServiceNames,
+      expectedStatus: SERVICE_STATUS,
+      interval: SERVICE_TEST_INTERVAL,
+      rules: [
+        "DOMAIN-SUFFIX,youtube.com",
+        "DOMAIN-SUFFIX,googlevideo.com",
+        "DOMAIN-SUFFIX,ytimg.com",
+        "DOMAIN-SUFFIX,youtu.be"
+      ],
+      ruleSets: [{ name: "proxynexus_youtube", file: "youtube.mrs" }]
+    },
+
+    {
       name: "ChatGPT_Auto",
+      target: aiGcpTarget,
       url: "https://chatgpt.com/",
       candidates: aiNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: ["DOMAIN-SUFFIX,openai.com", "DOMAIN-SUFFIX,chatgpt.com"],
+      rules: [
+        "DOMAIN-SUFFIX,openai.com",
+        "DOMAIN-SUFFIX,chatgpt.com",
+        "DOMAIN-SUFFIX,oaistatic.com",
+        "DOMAIN-SUFFIX,oaiusercontent.com"
+      ],
       ruleSets: [{ name: "proxynexus_openai", file: "openai.mrs" }]
     },
 
@@ -417,23 +469,38 @@ function main(config) {
       candidates: googleNames,
       expectedStatus: SERVICE_STATUS,
       interval: SERVICE_TEST_INTERVAL,
-      rules: [
+      priorityTarget: aiGcpTarget,
+      priorityRules: [
         "DOMAIN-SUFFIX,gemini.google.com",
+        "DOMAIN-SUFFIX,aistudio.google.com",
+        "DOMAIN-SUFFIX,makersuite.googleapis.com",
+        "DOMAIN-SUFFIX,bard.google.com",
+        "DOMAIN-SUFFIX,deepmind.google",
+        "DOMAIN-SUFFIX,antigravity.google",
+        "DOMAIN-SUFFIX,antigravity.google.com",
+        "DOMAIN-SUFFIX,antigravity-unleash.goog",
         "DOMAIN-SUFFIX,generativelanguage.googleapis.com",
         "DOMAIN-SUFFIX,cloudcode-pa.googleapis.com",
         "DOMAIN-SUFFIX,daily-cloudcode-pa.googleapis.com",
         "DOMAIN-SUFFIX,aicode.googleapis.com",
-        "DOMAIN-SUFFIX,google.com",
-        "DOMAIN-SUFFIX,google.com.hk"
+        "DOMAIN-SUFFIX,businessaicode.googleapis.com",
+        "DOMAIN-SUFFIX,cloudaicompanion.googleapis.com",
+        "DOMAIN,oauth2.googleapis.com",
+        "DOMAIN,www.google.com",
+        "DOMAIN,google.com",
+        "DOMAIN,www.google.com.hk",
+        "DOMAIN,google.com.hk",
+        "DOMAIN-SUFFIX,accounts.google.com",
+        "DOMAIN-SUFFIX,consent.google.com"
       ],
-      ruleSets: [
-        { name: "proxynexus_gemini", file: "google-gemini.mrs" },
-        { name: "proxynexus_google", file: "google.mrs" }
-      ]
+      priorityRuleSets: [{ name: "proxynexus_gemini", file: "google-gemini.mrs" }],
+      rules: ["DOMAIN-SUFFIX,google.com", "DOMAIN-SUFFIX,google.com.hk"],
+      ruleSets: [{ name: "proxynexus_google", file: "google.mrs" }]
     },
 
     {
       name: "Claude_Auto",
+      target: aiGcpTarget,
       url: "https://claude.ai/",
       candidates: aiNames,
       expectedStatus: SERVICE_STATUS,
@@ -527,7 +594,9 @@ function main(config) {
 
   const dedicatedNames = new Set([
     ...dedicatedGroups.map((group) => group.name),
-    ...retiredGroupNames
+    ...retiredGroupNames,
+    AI_GCP_GROUP_NAME,
+    GCP_RELAY_GROUP_NAME
   ]);
 
   const keptGroups = oldGroups.filter((group) => group && !dedicatedNames.has(group.name));
@@ -618,28 +687,13 @@ function main(config) {
   //
   // 最终顺序：
   //
-  // ① 各服务专用组
-  // ② 原机场的所有其他代理组
-  // ③ 仅在缺失时新增的普通自动组
+  // ① 启用 GCP-落地 时的 AI_GCP_Exit 与 GCP_前置 组
+  // ② 各服务专用组
+  // ③ 原机场的所有其他代理组
+  // ④ 仅在缺失时新增的普通自动组
   //
   // 云新建的自动组排在底部，
   // 但可以从“手动选择”内部直接选到它。
-
-  config["proxy-groups"] = [...dedicatedGroups, ...keptGroups, ...addedGroups];
-
-  // 7.1 给云新建的“♻️ 自动选择”增加手动入口。
-  //
-  // 最终：
-  //
-  // 🔰 手动选择
-  // ├─ ♻️ 自动选择
-  // ├─ 日本 A01
-  // ├─ 台湾 A02
-  // ├─ 新加坡 A03
-  // └─ 其他节点……
-  //
-  // 已有自动选择组时不改机场手动组，
-  // 保留原有选项和顺序。
 
   const manualGroup = keptGroups.find(
     (group) =>
@@ -684,6 +738,49 @@ function main(config) {
     manualGroup.proxies = [AUTO_NAME, ...choices.filter((name) => name !== AUTO_NAME)];
   }
 
+  const gcpGroups = [];
+  if (hasGcpExit) {
+    const gcpDialerProxy = gcpCustomDialer !== "" ? gcpCustomDialer : GCP_RELAY_GROUP_NAME;
+    const hasGcpProxy = rawNodes.some((node) => node && node.name === GCP_PROXY_NAME);
+
+    if (!hasGcpProxy) {
+      config.proxies = [
+        ...rawNodes,
+        {
+          name: GCP_PROXY_NAME,
+          type: "ss",
+          server: gcpServer,
+          port: gcpPort,
+          cipher: gcpCipher,
+          password: gcpPassword,
+          udp: true,
+          "dialer-proxy": gcpDialerProxy
+        }
+      ];
+    }
+
+    gcpGroups.push({
+      name: AI_GCP_GROUP_NAME,
+      type: "select",
+      proxies: [GCP_PROXY_NAME, "Google_Auto", "ChatGPT_Auto", "Claude_Auto"]
+    });
+
+    if (gcpCustomDialer === "") {
+      const relayChoices = [
+        ...(allNames.length === 0 && ruleProviderProxyGroup ? [ruleProviderProxyGroup.name] : []),
+        AUTO_NAME,
+        ...allNames.filter((name) => name !== AUTO_NAME && name !== GCP_PROXY_NAME)
+      ];
+      gcpGroups.push({
+        name: GCP_RELAY_GROUP_NAME,
+        type: "select",
+        proxies: [...new Set(relayChoices)]
+      });
+    }
+  }
+
+  config["proxy-groups"] = [...gcpGroups, ...dedicatedGroups, ...keptGroups, ...addedGroups];
+
   // ==========================================================
   // 第八层：服务域名分流
   // ==========================================================
@@ -704,26 +801,36 @@ function main(config) {
 
   const serviceRules = [];
 
+  function appendServiceRule(rule, targetGroup) {
+    const ruleParts = rule.split(",");
+    serviceRules.push(
+      [ruleParts[0], ruleParts[1], targetGroup, ...ruleParts.slice(2)].join(",")
+    );
+  }
+
+  function appendServiceRuleSet(ruleSet, targetGroup) {
+    addedRuleProviders[ruleSet.name] = {
+      type: "http",
+      behavior: "domain",
+      format: "mrs",
+      url: RULE_PROVIDER_BASE_URL + "/" + ruleSet.file,
+      interval: RULE_PROVIDER_INTERVAL,
+      proxy: RULE_PROVIDER_PROXY
+    };
+
+    serviceRules.push("RULE-SET," + ruleSet.name + "," + targetGroup);
+  }
+
   serviceDefinitions.forEach((service) => {
-    service.rules.forEach((rule) => {
-      const ruleParts = rule.split(",");
-      serviceRules.push(
-        [ruleParts[0], ruleParts[1], service.name, ...ruleParts.slice(2)].join(",")
-      );
-    });
+    const priorityTarget = service.priorityTarget || service.name;
+    const defaultTarget = service.target || service.name;
 
-    (service.ruleSets || []).forEach((ruleSet) => {
-      addedRuleProviders[ruleSet.name] = {
-        type: "http",
-        behavior: "domain",
-        format: "mrs",
-        url: RULE_PROVIDER_BASE_URL + "/" + ruleSet.file,
-        interval: RULE_PROVIDER_INTERVAL,
-        proxy: RULE_PROVIDER_PROXY
-      };
-
-      serviceRules.push("RULE-SET," + ruleSet.name + "," + service.name);
-    });
+    (service.priorityRules || []).forEach((rule) => appendServiceRule(rule, priorityTarget));
+    (service.priorityRuleSets || []).forEach((ruleSet) =>
+      appendServiceRuleSet(ruleSet, priorityTarget)
+    );
+    (service.rules || []).forEach((rule) => appendServiceRule(rule, defaultTarget));
+    (service.ruleSets || []).forEach((ruleSet) => appendServiceRuleSet(ruleSet, defaultTarget));
   });
 
   config["rule-providers"] = {
@@ -885,7 +992,7 @@ function main(config) {
   //
   // ① Tailscale 内置出站规则（置于全部规则最前面）
   // ② 嘉信直连规则
-  // ③ APNs / ChatGPT / Google（含 Gemini） / Claude / X（含 Grok） / Meta（含 Muse） / GitHub
+  // ③ APNs / YouTube / ChatGPT / Google（含 Gemini 与 Antigravity） / Claude / X（含 Grok） / Meta（含 Muse） / GitHub
   // ④ 机场原有规则
   //
   // Mihomo 从上到下依次匹配规则。

@@ -12,25 +12,27 @@ ProxyNexus 集中维护 Clash / Mihomo 客户端使用的配置覆写脚本：
 脚本按顺序完成以下工作：
 
 1. 从 `config.proxies` 读取当前配置中的静态节点，并按节点名称筛选候选集。
-2. 为 APNs、OpenAI/ChatGPT、Google/Gemini、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
-3. 保留机场已有的 `♻️ 自动选择` 组（并将原配置策略组与 `proxy-providers` 中已知明文 `http://` `generate_204` 测速地址自动升级为 `https://`）；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
-4. 注册服务规则集，并把服务规则放在原配置规则之前。
-5. 在原配置未启用 `sniffer` 时补齐默认域名嗅探配置，防止纯 IP 连接绕过域名规则。
-6. 将更新后的配置返回给客户端。
+2. 为 APNs、YouTube、OpenAI/ChatGPT、Google/Gemini（含 Antigravity）、Claude、X/Grok、Meta/Muse 和 GitHub 创建服务测速组。
+3. 当顶部 `GCP_SS_SERVER` 与 `GCP_SS_PASSWORD` 均非空时，自动注入 Shadowsocks-2022 落地节点 `GCP-落地`（通过 `dialer-proxy` 经独立 `GCP_前置` `select` 组中转），并创建 `AI_GCP_Exit` 组接管 OpenAI/ChatGPT、Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名；默认留空时不生成 `GCP-落地` 节点，自动回退原服务测速组。
+4. 保留机场已有的 `♻️ 自动选择` 组（并将原配置策略组与 `proxy-providers` 中已知明文 `http://` `generate_204` 测速地址自动升级为 `https://`）；缺少时才用 `https://www.gstatic.com/generate_204` 创建普通自动组，并在找到“手动选择”组时加入该组。
+5. 注册服务规则集，并把服务规则放在原配置规则之前（`YouTube_Auto` 置于 AI 与 Google 规则之前，避免视频流量落入 `GCP-落地`）。
+6. 在原配置未启用 `sniffer` 时补齐默认域名嗅探配置，防止纯 IP 连接绕过域名规则。
+7. 将更新后的配置返回给客户端。
 
 ## 服务分流
 
 | 服务组 | 测速网址 | 候选节点 | 静态兜底域名 | 远程规则集 |
 | --- | --- | --- | --- | --- |
 | `APNs_Auto` | `https://captive.apple.com/hotspot-detect.html`（预期 HTTP 200） | 名称标记为美国、日本、新加坡、香港的通用服务候选 | `push.apple.com`、`push.apple.com.cn` 及模块列出的其他域名和 IP 网段 | — |
-| `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选 | `openai.com`、`chatgpt.com` | `openai.mrs` |
-| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国，否则保留美国、日本、新加坡、台湾 | `gemini.google.com`、`generativelanguage.googleapis.com`、`cloudcode-pa.googleapis.com`、`daily-cloudcode-pa.googleapis.com`、`aicode.googleapis.com`、`google.com`、`google.com.hk` | `google-gemini.mrs`、`google.mrs` |
-| `Claude_Auto` | `https://claude.ai/` | AI 候选 | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
+| `YouTube_Auto` | `https://www.youtube.com/` | 通用服务候选，允许香港 | `youtube.com`、`googlevideo.com`、`ytimg.com`、`youtu.be` | `youtube.mrs` |
+| `ChatGPT_Auto` | `https://chatgpt.com/` | AI 候选（启用 `GCP-落地` 时规则转入 `AI_GCP_Exit`） | `openai.com`、`chatgpt.com`、`oaistatic.com`、`oaiusercontent.com` | `openai.mrs` |
+| `Google_Auto` | `https://www.google.com/` | 未标记 IPv6/V6 的 AI 候选：原配置自带 `♻️ 自动选择` 时仅保留美国，否则保留美国、日本、新加坡、台湾 | Gemini/Antigravity/Google 核心（启用 `GCP-落地` 时转入 `AI_GCP_Exit`）：`gemini.google.com`、`aistudio.google.com`、`makersuite.googleapis.com`、`bard.google.com`、`deepmind.google`、`antigravity.google`、`antigravity.google.com`、`antigravity-unleash.goog`、`generativelanguage.googleapis.com`、`cloudcode-pa.googleapis.com`、`daily-cloudcode-pa.googleapis.com`、`aicode.googleapis.com`、`businessaicode.googleapis.com`、`cloudaicompanion.googleapis.com`、`oauth2.googleapis.com`、`www.google.com`、`google.com`、`www.google.com.hk`、`google.com.hk`、`accounts.google.com`、`consent.google.com`；其余 Google：`google.com`、`google.com.hk` | `google-gemini.mrs`（启用时转入 `AI_GCP_Exit`）、`google.mrs`（始终走 `Google_Auto`） |
+| `Claude_Auto` | `https://claude.ai/` | AI 候选（启用 `GCP-落地` 时规则转入 `AI_GCP_Exit`） | `claude.ai`、`anthropic.com` | `anthropic.mrs` |
 | `SpaceX_Auto` | `https://x.com/` | AI 候选 | `grok.com`、`x.ai`、`grok.x.com`、`x.com`、`twitter.com`、`twimg.com`、`t.co` | `xai.mrs`、`x.mrs`、`twitter.mrs` |
 | `Meta_Auto` | `https://meta.ai/` | AI 候选中名称标记为美国或新加坡的节点 | `meta.ai`、`muse.ai` | `facebook.mrs`、`instagram.mrs`、`threads.mrs`、`whatsapp.mrs`、`messenger.mrs`、`meta.mrs`、`oculus.mrs` |
 | `GitHub_Auto` | `https://github.com/` | 通用服务候选，允许香港 | `github.com`、`githubusercontent.com` | `github.mrs` |
 
-Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。原配置自带 `♻️ 自动选择` 时，`Google_Auto` 只保留名称标记为美国的候选节点；否则保留美国、日本、新加坡、台湾（此区分基于原配置策略组名称特征，并非检测订阅来源或真实出口归属地）。自动测速组的切换容差统一设为 `200ms`。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国和新加坡节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
+Google 组会排除节点名称中明确标记为 `IPv6` 或独立 `V6` 的节点；这是名称标签筛选，不等于检测了节点的真实出口 IP 协议。ChatGPT 与 OpenAI 已共用 `ChatGPT_Auto`；Gemini 与 Google 共用 `Google_Auto`；X 与 Grok 共用 `SpaceX_Auto`。`YouTube_Auto` 位于 AI 与 Google 规则之前，使 YouTube 视频流量与 Google 其余宽泛流量（如 Drive/Photos 等）继续走机场节点；仅在启用 `GCP-落地` 时，由 `AI_GCP_Exit`（默认 `GCP-落地`，可选回退 `Google_Auto`/`ChatGPT_Auto`/`Claude_Auto`）统一承接 OpenAI/ChatGPT、Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名。原配置自带 `♻️ 自动选择` 时，`Google_Auto` 只保留名称标记为美国的候选节点；否则保留美国、日本、新加坡、台湾（此区分基于原配置策略组名称特征，并非检测订阅来源或真实出口归属地）。自动测速组的切换容差统一设为 `200ms`。`SpaceX_Auto` 沿用 AI 候选并以 X 网址测速；香港节点因此不进入该合并组。Meta AI、Muse、Facebook、Instagram、Threads、WhatsApp、Messenger 和 Oculus/Quest 共用美国和新加坡节点组 `Meta_Auto`。测速只探测表中的网址，不代表该组内每个服务的登录状态、API 可用性或账号地区资格都已验证。
 
 APNs 使用独立的 `APNs_Auto`，从名称标记为美国、日本、新加坡、香港的通用服务候选中测速。Mihomo URL-test 使用 HTTP `HEAD` 请求，因此测速目标采用支持 `HEAD` 的 Apple 连通性页面 `captive.apple.com/hotspot-detect.html`，预期状态为 HTTP 200。这只测 Apple 网站 HTTPS 443 的延迟，不验证设备侧 APNs 长连接。规则完整包含用户提供的 APNs 模块中的 3 条域名规则和 Apple 公布的 5 段 IPv4、4 段 IPv6 地址段，并额外覆盖日志中观测到的 `push.apple.com.cn`。其中 `akadns.net` 和 `apple.com.edgekey.net` 的匹配范围比 `push.apple.com` 更宽，可能让非推送的 Apple 相关流量也命中 `APNs_Auto`，需结合客户端活动记录验证。APNs 是设备共享的推送连接，命中后所有使用 APNs 的应用通知都会走 `APNs_Auto`，无法按应用单独分流。要影响 iPhone 推送，必须在承载 iPhone 流量的 Clash 客户端加载此脚本；仅在 Mac 加载不会改变 iPhone 的 APNs 路径。
 
@@ -81,11 +83,13 @@ Tailscale 接入提供两套免密钥方案，分别对应桌面端与手机端�
 - **免密钥授权与排错验证**：[`clash_override_mobile.js`](clash_override_mobile.js) 默认将 `TAILSCALE_AUTH_KEY` 留空且不包含个人 Tailnet 信息，可直接通过仓库 Raw URL 订阅更新；首次授权时既可以触发 Tailscale 流量后在客户端 `info` 日志点开登录链接，也可以在本地副本中临时填入一次性 `auth-key`、待 Tailscale 后台上线后清空变量或切回留空版远程脚本（只要 `hostname` 与客户端 `state-dir` 缓存不变即可保持在线，建议同时在 Tailscale 管理后台开启 `Disable key expiry`）。若客户端启用了内置 DNS 界面覆写（如 FlClash 的 DNS 覆写），会覆盖脚本写入的 `fake-ip-filter`，需确认面板侧的 `fake-ip-filter` 同样包含 `+.tailscale.com`、`+.tailscale.io` 与 `+.ts.net`（且不要把 Mihomo 自身 DNS 监听端口如 `127.0.0.1:7874` 配入上游 `nameserver` / `proxy-server-nameserver`）。若日志报 `unsupported proxy type: tailscale`，说明该客户端内核编译未包含 Tailscale 支持（需 Mihomo 支持 `with_gvisor` 且未加 `no_tailscale`，例如 iOS Stash 等不支持的客户端需更换或改回通用版）。生效后可在手机浏览器访问对应设备 MagicDNS（如 `https://<设备名>.<你的tailnet>.ts.net`）或内网 IP（`http://100.x.x.x:<端口>`），并在目标电脑运行 `tailscale status` 确认设备在线。
 - **桌面端（FlClash + T3 Code）跨机直连排障**：桌面端同时使用 FlClash 系统代理、环境变量 `NO_PROXY` 与 T3 Code 跨机直连时的分层排查与 `t3 pair --tailscale` 纯本地配对指南见 [T3 Code + Tailscale + Clash/FlClash 跨机直连与排障指南](docs/t3-tailscale-troubleshooting.md)。
 
+- **GCP 落地链式代理（[`clash_override.js`](clash_override.js) 与 [`clash_override_mobile.js`](clash_override_mobile.js) 通用）**：两份脚本顶部均预留 `GCP_SS_SERVER = ""`、`GCP_SS_PORT = 38443`、`GCP_SS_CIPHER = "2022-blake3-aes-128-gcm"`、`GCP_SS_PASSWORD = ""` 与 `GCP_DIALER_PROXY = ""` 留空模板。公开脚本不包含任何真实服务器地址或密钥；只有当服务器地址与密码均非空时，脚本才会注入 `GCP-落地` 节点（通过 `dialer-proxy` 经独立 `GCP_前置` `select` 组中转），并创建 `AI_GCP_Exit` `select` 组（默认选 `GCP-落地`，保留 `Google_Auto`、`ChatGPT_Auto`、`Claude_Auto` 作备选）。YouTube 视频流量（`YouTube_Auto` / `youtube.mrs`）位于 AI 与 Google 规则之前，不会经过 `GCP-落地`。
+
 当原配置未提供 `sniffer` 或 `sniffer.enable` 不为 `true` 时，脚本会默认写入启用配置（开启 `force-dns-mapping`、`parse-pure-ip`、`override-destination`，嗅探 HTTP `80`/`8080-8880`、TLS `443`/`8443` 与 QUIC `443`/`8443`，并在 `skip-domain` 中保留 `Mijia Cloud` 与 `+.push.apple.com`）；若原配置已启用 `sniffer`，则保持原配置不变。部分客户端界面覆写可能会覆盖 `sniffer` 字段，生效情况需以客户端日志为准。
 
 当原配置保留的策略组 `url` 或 `proxy-providers` 的 `health-check.url` 使用明文 `http://www.gstatic.com/generate_204`、`http://gstatic.com/generate_204` 或 `http://cp.cloudflare.com/generate_204` 时，脚本会自动将其升级为对应的 `https://` 地址，以避免 Mihomo 开启统一延迟（同一连接连续两次 `HEAD` 请求）时因明文测速被劫持或连接提前关闭而报错弹窗；策略组其余参数与节点名单保持不变，非目标 HTTP 地址不做改写，脚本也仍不展开 `proxy-providers`。
 
-Google 的 `google-gemini.mrs` 与 `google.mrs` 都指向 `Google_Auto`；Chrome 搜索和 Gemini 等 Google 域名共用这个组。X、Twitter 与 Grok 的静态规则和三个远程规则集都指向 `SpaceX_Auto`，所以 `grok.x.com` 与 `x.com` 的规则匹配顺序不会把它们分到不同组。
+未启用 `GCP-落地` 时，Google 的 `google-gemini.mrs` 与 `google.mrs` 均指向 `Google_Auto`；启用 `GCP-落地` 后，仅 OpenAI/ChatGPT、Anthropic/Claude、Gemini/Antigravity 及 Google 搜索/账号核心域名切入 `AI_GCP_Exit`，其余 `google.mrs` 流量仍留给 `Google_Auto`，且 `YouTube_Auto` 始终优先命中机场节点。X、Twitter 与 Grok 的静态规则和三个远程规则集都指向 `SpaceX_Auto`，所以 `grok.x.com` 与 `x.com` 的规则匹配顺序不会把它们分到不同组。
 
 ## 节点筛选边界
 
