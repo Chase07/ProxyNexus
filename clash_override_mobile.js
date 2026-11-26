@@ -118,7 +118,7 @@ function main(config) {
   const GCP_RELAY_GROUP_NAME = "GCP_前置";
   const GCP_FALLBACK_INTERVAL = 120;
   const GCP_SS_SERVER = "";
-  const GCP_SS_PORT = 38443;
+  const GCP_SS_PORT = 443;
   const GCP_SS_CIPHER = "2022-blake3-aes-128-gcm";
   const GCP_SS_PASSWORD = "";
   // 留空时自动创建独立的 GCP_前置 select 组（含 ♻️ 自动选择 与机场节点）；
@@ -430,7 +430,7 @@ function main(config) {
       : "2022-blake3-aes-128-gcm";
   const gcpPortNum = Number(GCP_SS_PORT);
   const gcpPort =
-    Number.isInteger(gcpPortNum) && gcpPortNum > 0 && gcpPortNum <= 65535 ? gcpPortNum : 38443;
+    Number.isInteger(gcpPortNum) && gcpPortNum > 0 && gcpPortNum <= 65535 ? gcpPortNum : 443;
   const gcpCustomDialer = typeof GCP_DIALER_PROXY === "string" ? GCP_DIALER_PROXY.trim() : "";
   const hasGcpExit = gcpServer !== "" && gcpPassword !== "";
 
