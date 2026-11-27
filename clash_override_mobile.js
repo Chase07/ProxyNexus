@@ -7,26 +7,26 @@
  *
  * 云：
  * 没有“♻️ 自动选择”组。
- * 自动创建该组，按节点名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点（保留移动/电信/三网及香港等地区）。
+ * 自动创建该组，按节点名称排除机场信息、纯 IPv6/V6（放行 IPv6 双栈）、无痕/宽频/边缘、纯联通及超过 3 倍的节点（保留移动/电信/三网及香港等地区）。
  * 同时将其加入“🔰 手动选择”作为第一个选项。
  *
  * PAOLUZ：
  * 已经自带“♻️ 自动选择”组。
  * 保留原组位置与测速参数（仅将已知明文 http:// 测速地址如 gstatic/cloudflare generate_204 升级为 https://），
- * 并按与“云”一致的规则过滤其静态节点名单（按名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点）。
+ * 并按与“云”一致的规则过滤其静态节点名单（按名称排除机场信息、纯 IPv6/V6、无痕/宽频/边缘、纯联通及超过 3 倍的节点）。
  *
  *【服务专用代理组】
  *
  * ChatGPT/OpenAI、Claude：
  * 各自使用对应网站测速和服务规则集。
- * 排除香港、IPv6/V6、纯联通、指定地区、高倍率节点。
+ * 排除香港、纯 IPv6/V6（放行 IPv6 双栈）、无痕/宽频/边缘、纯联通、指定地区、高倍率节点。
  * 测速只检查探测网址的 HTTP 状态和延迟，
  * 不验证登录态、API 可用性或账号地区资格。
  *
  * Google（含 Gemini / Antigravity）与 YouTube：
  * YouTube 单独使用 YouTube_Auto（youtube.mrs + 静态核心视频域名），避免视频流量占用 GCP 落地。
- * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；统一限定美国、日本、新加坡、台湾
- * （各服务组均已排除名称标记为 IPv6/V6 的节点；防送中主力由 Google_GCP / GCP-落地 承担）。
+ * 未启用 GCP-落地 时，Google 与 Gemini 共用 Google_Auto；原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国，
+ * 否则（云）限定美国、日本、新加坡、台湾（各服务组均已排除纯 IPv6/V6 与无痕/宽频/边缘节点，同时放行 IPv6 双栈节点；防送中主力由 Google_GCP / GCP-落地 承担）。
  * 启用 GCP-落地（顶部填入 GCP_SS_SERVER 与 GCP_SS_PASSWORD）后，将注入 Shadowsocks-2022 节点 GCP-落地
  * （通过 dialer-proxy 经独立 GCP_前置 select 组中转），并创建各自独立的 fallback 自动容灾组
  * （Google_GCP / ChatGPT_GCP / Claude_GCP / Muse_GCP）：正常时优先走 GCP-落地，
@@ -92,7 +92,7 @@ function main(config) {
   const TEST_TOLERANCE = 200;
 
   // 单次测速超时，单位毫秒。
-  const TEST_TIMEOUT = 5000;
+  const TEST_TIMEOUT = 8000;
 
   // 服务网站测速认可的 HTTP 状态码。
   const SERVICE_STATUS = "200/301/302";
@@ -131,7 +131,7 @@ function main(config) {
   //
   // 本层用于服务专用组与“♻️ 自动选择”（两套订阅统一筛选标准）。
   //
-  // “♻️ 自动选择”统一按节点名称排除机场信息、IPv6/V6、纯联通与高倍率节点，但不限制地区；
+  // “♻️ 自动选择”统一按节点名称排除机场信息、纯 IPv6/V6（放行 IPv6 双栈）、无痕/宽频/边缘、纯联通与高倍率节点，但不限制地区；
   // 原配置自带“♻️ 自动选择”时同步过滤其静态节点名单，缺失时按同一标准新建。
 
   // 2.1 香港节点识别
@@ -178,11 +178,14 @@ function main(config) {
     return /联通/.test(name) && !/移动|电信|三网/.test(name);
   }
 
-  // 2.5 地区与 IPv6 节点标签识别
+  // 2.5 地区、纯 IPv6 与特殊功能节点标签识别
   //
-  // IPV6_NODE 按名称标签将 IPv6 / V6 节点统一排除在“♻️ 自动选择”、
-  // GCP_前置 与所有服务专用组之外（不检测真实出口协议）。
-  // Meta AI、Muse 组使用美国和新加坡；Google 组统一使用美国、日本、新加坡、台湾。
+  // isIpv6OnlyNode 按名称标签将纯 IPv6 / V6 节点排除在“♻️ 自动选择”、
+  // GCP_前置 与所有服务专用组之外，同时放行明确标注“双栈 / dual-stack”的节点
+  // （如“美国 C01 IPv6双栈 Gemini”“日本 C04 IPV6双栈本地路由”；不检测真实出口协议）。
+  // SPECIAL_TAG_NODE 按名称排除“无痕”（DNS 广告拦截）、“宽频”（不保证 YouTube 地区）
+  // 与“边缘”（低优先级边缘节点），仍保留在“🔰 手动选择”等原分组中备用；不排除“VIP6专属”。
+  // Meta AI、Muse 组使用美国和新加坡；Google 组按是否自带“♻️ 自动选择”筛选美国或美/日/新/台。
   //
   // 只根据节点名称判断，不检测真实出口 IP 或协议。
   //
@@ -194,6 +197,12 @@ function main(config) {
 
   const US = /美国|🇺🇸|United[\s_-]*States|\bUSA\d*\b|\bUS\d*\b/i;
   const IPV6_NODE = /IPv6|(?:^|[^A-Za-z0-9])V6(?:$|[^A-Za-z0-9])/i;
+  const DUAL_STACK_NODE = /双栈|dual[\s_-]*stack/i;
+  const SPECIAL_TAG_NODE = /无痕|宽频|边缘/;
+
+  function isIpv6OnlyNode(name) {
+    return IPV6_NODE.test(name) && !DUAL_STACK_NODE.test(name);
+  }
   const JAPAN = /日本|🇯🇵|Japan|\bJP\d*\b|\bJPN\b|东京|大阪|Tokyo|Osaka|Nagoya|Yokohama|Sapporo/i;
   const SINGAPORE = /新加坡|🇸🇬|Singapore|\bSG\d*\b|\bSIN\d*\b/i;
   const TAIWAN = /台湾|臺灣|🇹🇼|Taiwan|\bTW\d*\b|\bTWN\b|台北|高雄|Taipei|Kaohsiung/i;
@@ -257,14 +266,18 @@ function main(config) {
   // - 已自带“♻️ 自动选择”的订阅（如 PAOLUZ）过滤其静态候选节点
   // - GCP_前置 的默认单节点列表
   // 筛选标准：
-  // - 不限制地区（香港等地区均保留）
+  // - 不限制地区（香港等地区均保留，VIP6专属等正常编号节点亦保留）
   // - 保留移动、电信、三网及复合优化节点
-  // - 按节点名称排除机场信息、IPv6/V6、纯联通及超过 3 倍的节点（不检测真实出口协议或计费倍率）
+  // - 放行明确标注“双栈 / dual-stack”的 IPv6 双栈节点
+  // - 按节点名称排除机场信息、纯 IPv6/V6、无痕/宽频/边缘、纯联通及超过 3 倍的节点（不检测真实出口协议或计费倍率）
   //
   // 例如：
   // 1 官网 tcp.bet → 排除
   // 剩余流量 100GB → 排除
-  // IPv6 日本 C01 移动宽带优化 → 排除（IPv6）
+  // IPv6 日本 C01 移动宽带优化 → 排除（纯 IPv6）
+  // 美国 C01 IPv6双栈 Gemini → 保留（IPv6 双栈）
+  // 日本 C04 IPV6双栈本地路由 → 保留（IPv6 双栈）
+  // 香港宽频B0 / 日本边缘B1 / 美国无痕D1 → 排除（宽频/边缘/无痕）
   // 香港 A02 联通优化 → 排除（纯联通）
   // 美国 A03 [5x] → 排除（高倍率）
   // 日本 A01 移动优化 → 保留
@@ -300,7 +313,8 @@ function main(config) {
       !tailscaleNodeNames.has(name) &&
       name !== GCP_PROXY_NAME &&
       !INFO.test(name) &&
-      !IPV6_NODE.test(name) &&
+      !isIpv6OnlyNode(name) &&
+      !SPECIAL_TAG_NODE.test(name) &&
       !isUnicomOnly(name) &&
       getMultiplier(name) <= MAX_MULTIPLIER
     );
@@ -311,7 +325,8 @@ function main(config) {
   // 4.2 通用服务候选节点基线（YouTube、GitHub、APNs 及 AI 候选基础）。
   //
   // 在 normalAutoNames 基础上进一步排除指定地区，即统一排除：
-  // IPv6 / V6
+  // 纯 IPv6 / V6（放行 IPv6 双栈）
+  // 无痕 / 宽频 / 边缘
   // 指定地区
   // 纯联通
   // 机场信息
@@ -337,7 +352,7 @@ function main(config) {
 
   // 4.4 识别原配置是否已自带普通自动选择组，并筛选 Meta AI / Muse 与 Google 候选节点。
   //
-  // existingAuto 仅用于第六、七层判断是否为“云”补建“♻️ 自动选择”；Google_Auto 不再按订阅收窄地区。
+  // 仅依据原配置 proxy-groups 是否存在同名“♻️ 自动选择”组区分 PAOLUZ 与云，不读取外部订阅来源。
   const AUTO_NAME = "♻️ 自动选择";
   const oldGroups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
   const existingAuto = oldGroups.find((group) => group && group.name === AUTO_NAME);
@@ -345,11 +360,13 @@ function main(config) {
   // Meta AI / Muse 只保留美国和新加坡节点。
   const metaNames = aiNames.filter((name) => US.test(name) || SINGAPORE.test(name));
 
-  // Google 组已通过 aiNames 排除名称标记为 IPv6 / V6 的节点与香港节点。
+  // Google 组已通过 aiNames 排除纯 IPv6 / V6（放行 IPv6 双栈）、无痕/宽频/边缘与香港节点。
   // 这里只能识别节点名称标签，无法判断未标注节点的真实出口协议。
-  // 统一保留美国、日本、新加坡、台湾节点（AI 防送中核心流量已交由 GCP-落地 承接）。
-  const googleNames = aiNames.filter(
-    (name) => US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name)
+  // 原配置自带“♻️ 自动选择”（PAOLUZ）时仅保留美国，否则（云）保留美国、日本、新加坡、台湾。
+  const googleNames = aiNames.filter((name) =>
+    existingAuto
+      ? US.test(name)
+      : US.test(name) || JAPAN.test(name) || SINGAPORE.test(name) || TAIWAN.test(name)
   );
 
   // ==========================================================
@@ -523,7 +540,20 @@ function main(config) {
         "DOMAIN,www.google.com.hk",
         "DOMAIN,google.com.hk",
         "DOMAIN-SUFFIX,accounts.google.com",
-        "DOMAIN-SUFFIX,consent.google.com"
+        "DOMAIN-SUFFIX,consent.google.com",
+        "DOMAIN-SUFFIX,myaccount.google.com",
+        "DOMAIN-SUFFIX,families.google.com",
+        "DOMAIN-SUFFIX,passwords.google.com",
+        "DOMAIN-SUFFIX,recaptcha.google.com",
+        "DOMAIN,accountsettings-pa.googleapis.com",
+        "DOMAIN,people-pa.googleapis.com",
+        "DOMAIN,android.apis.google.com",
+        "DOMAIN,android.clients.google.com",
+        "DOMAIN-SUFFIX,one.google.com",
+        "DOMAIN,subscriptionsmanagement-pa.googleapis.com",
+        "DOMAIN,subscriptionsmobile-pa.googleapis.com",
+        "DOMAIN,payments-pa.googleapis.com",
+        "DOMAIN-SUFFIX,payments.google.com"
       ],
       priorityRuleSets: [{ name: "proxynexus_gemini", file: "google-gemini.mrs" }],
       rules: ["DOMAIN-SUFFIX,google.com", "DOMAIN-SUFFIX,google.com.hk"],
@@ -702,7 +732,8 @@ function main(config) {
     //
     // 为云订阅建立一个自动测速组，按节点名称排除：
     // - 机场信息类节点
-    // - IPv6 / V6 节点
+    // - 纯 IPv6 / V6 节点（放行 IPv6 双栈）
+    // - 无痕 / 宽频 / 边缘节点
     // - 纯联通节点（保留移动、电信、三网优化）
     // - 超过 MAX_MULTIPLIER（3 倍）的节点
     // 不限制地区（香港等地区均保留）。
